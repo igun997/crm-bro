@@ -8,6 +8,7 @@ mod ws;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer, middleware::Logger};
+use actix_files as afiles;
 use sea_orm::Database;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -81,6 +82,8 @@ async fn main() -> std::io::Result<()> {
             .configure(routes::configure)
             .configure(whatsapp::webhook::configure)
             .configure(ws::configure)
+            .service(afiles::Files::new("/static", "./static").index_file("index.html"))
+            .service(afiles::Files::new("/media", "./media"))
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),

@@ -34,3 +34,7 @@ migrate:
 		mysql -u REDACTED_DB_USER -p'REDACTED_DB_PASSWORD' -h localhost crmbro < $$f; \
 	done
 	@echo "Done."
+
+static:
+	@echo "Serving static at http://localhost:3000"
+	python3 -m http.server 3000 --directory static

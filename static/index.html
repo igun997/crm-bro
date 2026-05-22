@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRM Bro - WhatsApp Chat</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; height: 100vh; display: flex; background: #111b21; color: #e9edef; }
+        
+        /* Sidebar */
+        .sidebar { width: 350px; border-right: 1px solid #222d34; display: flex; flex-direction: column; }
+        .sidebar-header { padding: 16px; background: #202c33; display: flex; align-items: center; justify-content: space-between; }
+        .sidebar-header h2 { font-size: 18px; }
+        .search-box { padding: 8px 12px; background: #111b21; }
+        .search-box input { width: 100%; padding: 8px 12px; border-radius: 8px; border: none; background: #202c33; color: #e9edef; font-size: 14px; outline: none; }
+        .conversations { flex: 1; overflow-y: auto; }
+        .conv-item { padding: 12px 16px; border-bottom: 1px solid #222d34; cursor: pointer; display: flex; align-items: center; gap: 12px; }
+        .conv-item:hover, .conv-item.active { background: #2a3942; }
+        .conv-avatar { width: 40px; height: 40px; border-radius: 50%; background: #00a884; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 16px; flex-shrink: 0; }
+        .conv-info { flex: 1; min-width: 0; }
+        .conv-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .conv-last { font-size: 13px; color: #8696a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .conv-time { font-size: 11px; color: #8696a0; }
+
+        /* Chat area */
+        .chat-area { flex: 1; display: flex; flex-direction: column; }
+        .chat-header { padding: 12px 16px; background: #202c33; border-bottom: 1px solid #222d34; display: flex; align-items: center; gap: 12px; }
+        .chat-header-name { font-size: 16px; font-weight: 500; }
+        .chat-header-phone { font-size: 12px; color: #8696a0; }
+        .messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 4px; background: #0b141a; }
+        .msg { max-width: 65%; padding: 8px 12px; border-radius: 8px; font-size: 14px; line-height: 1.4; word-wrap: break-word; }
+        .msg-inbound { background: #202c33; align-self: flex-start; border-top-left-radius: 0; }
+        .msg-outbound { background: #005c4b; align-self: flex-end; border-top-right-radius: 0; }
+        .msg-time { font-size: 11px; color: #8696a0; margin-top: 4px; text-align: right; }
+        .msg-media { max-width: 250px; border-radius: 8px; margin-bottom: 4px; }
+        .msg-media img { width: 100%; border-radius: 6px; }
+
+        /* Input area */
+        .input-area { padding: 12px 16px; background: #202c33; display: flex; align-items: center; gap: 12px; }
+        .input-area input { flex: 1; padding: 10px 16px; border-radius: 8px; border: none; background: #2a3942; color: #e9edef; font-size: 14px; outline: none; }
+        .input-area button { padding: 10px 20px; border-radius: 8px; border: none; background: #00a884; color: #fff; font-size: 14px; cursor: pointer; font-weight: 500; }
+        .input-area button:hover { background: #02906f; }
+
+        /* Empty state */
+        .empty-state { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 12px; color: #8696a0; }
+        .empty-state h3 { font-size: 20px; color: #e9edef; }
+
+        /* Status indicator */
+        .ws-status { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .ws-connected { background: #00a884; }
+        .ws-disconnected { background: #ea0038; }
+
+        /* Send options */
+        .send-type { display: flex; gap: 8px; padding: 8px 16px; background: #1a2730; }
+        .send-type button { padding: 4px 12px; border-radius: 16px; border: 1px solid #2a3942; background: transparent; color: #8696a0; font-size: 12px; cursor: pointer; }
+        .send-type button.active { background: #00a884; color: #fff; border-color: #00a884; }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <div class="sidebar-header">
+            <h2>CRM Bro</h2>
+            <span class="ws-status ws-disconnected" id="wsStatus" title="WebSocket status"></span>
+        </div>
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Search conversations..." oninput="searchConversations()">
+        </div>
+        <div class="conversations" id="convList"></div>
+    </div>
+
+    <div class="chat-area" id="chatArea">
+        <div class="empty-state" id="emptyState">
+            <h3>CRM Bro WhatsApp</h3>
+            <p>Select a conversation to start chatting</p>
+        </div>
+        <div id="chatView" style="display:none; flex:1; flex-direction:column;">
+            <div class="chat-header" id="chatHeader">
+                <div class="conv-avatar" id="chatAvatar">?</div>
+                <div>
+                    <div class="chat-header-name" id="chatName">-</div>
+                    <div class="chat-header-phone" id="chatPhone">-</div>
+                </div>
+            </div>
+            <div class="messages" id="messageList"></div>
+            <div class="send-type">
+                <button class="active" onclick="setSendType('text')" id="btnText">Text</button>
+                <button onclick="setSendType('template')" id="btnTemplate">Template</button>
+                <button onclick="setSendType('media')" id="btnMedia">Media</button>
+            </div>
+            <div class="input-area">
+                <input type="text" id="msgInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendMessage()">
+                <button onclick="sendMessage()">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = 'http://localhost:8080';
+        const WS_URL = 'ws://localhost:8080';
+        let currentConv = null;
+        let sendType = 'text';
+        let wsGlobal = null;
+        let wsChat = null;
+
+        async function loadConversations() {
+            try {
+                const res = await fetch(`${API}/api/chat/conversations?per_page=50`);
+                const data = await res.json();
+                renderConversations(data.data);
+            } catch(e) { console.error('Load conversations failed:', e); }
+        }
+
+        function renderConversations(convs) {
+            const list = document.getElementById('convList');
+            list.innerHTML = convs.map(c => `
+                <div class="conv-item ${currentConv?.id === c.id ? 'active' : ''}" onclick='selectConversation(${JSON.stringify(c)})'>
+                    <div class="conv-avatar">${(c.contact_name || c.contact_phone)[0].toUpperCase()}</div>
+                    <div class="conv-info">
+                        <div class="conv-name">${c.contact_name || c.contact_phone}</div>
+                        <div class="conv-last">${c.contact_phone}</div>
+                    </div>
+                    <div class="conv-time">${c.last_message_at ? new Date(c.last_message_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}</div>
+                </div>
+            `).join('');
+        }
+
+        async function searchConversations() {
+            const q = document.getElementById('searchInput').value;
+            const params = q ? `?phone=${q}&name=${q}` : '?per_page=50';
+            try {
+                const res = await fetch(`${API}/api/chat/conversations${params}`);
+                const data = await res.json();
+                renderConversations(data.data);
+            } catch(e) {}
+        }
+
+        async function selectConversation(conv) {
+            currentConv = conv;
+            document.getElementById('emptyState').style.display = 'none';
+            document.getElementById('chatView').style.display = 'flex';
+            document.getElementById('chatName').textContent = conv.contact_name || conv.contact_phone;
+            document.getElementById('chatPhone').textContent = conv.contact_phone;
+            document.getElementById('chatAvatar').textContent = (conv.contact_name || conv.contact_phone)[0].toUpperCase();
+            await loadMessages(conv.contact_phone);
+            connectChatWs(conv.id);
+        }
+
+        async function loadMessages(phone) {
+            try {
+                const res = await fetch(`${API}/api/chat/messages/${phone}?per_page=100`);
+                const data = await res.json();
+                renderMessages(data.data);
+            } catch(e) { console.error('Load messages failed:', e); }
+        }
+
+        function renderMessages(msgs) {
+            const list = document.getElementById('messageList');
+            list.innerHTML = msgs.map(m => {
+                let content = '';
+                if (m.media_url && m.media_mime && m.media_mime.startsWith('image')) {
+                    content += `<div class="msg-media"><img src="${API}/static/${m.media_url}" alt="image"></div>`;
+                }
+                if (m.body) content += `<div>${escapeHtml(m.body)}</div>`;
+                if (!content) content = `<div><em>[${m.msg_type}]</em></div>`;
+                content += `<div class="msg-time">${new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
+                return `<div class="msg msg-${m.direction}">${content}</div>`;
+            }).join('');
+            list.scrollTop = list.scrollHeight;
+        }
+
+        function escapeHtml(text) {
+            const d = document.createElement('div');
+            d.textContent = text;
+            return d.innerHTML;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('msgInput');
+            const text = input.value.trim();
+            if (!text || !currentConv) return;
+            let endpoint, body;
+            if (sendType === 'text') {
+                endpoint = '/api/chat/send/text';
+                body = { to: currentConv.contact_phone, message: text };
+            } else if (sendType === 'template') {
+                endpoint = '/api/chat/send/template';
+                body = { to: currentConv.contact_phone, template_name: text, language: 'en_US' };
+            } else {
+                endpoint = '/api/chat/send/media';
+                body = { to: currentConv.contact_phone, media_type: 'image', url: text, caption: null };
+            }
+            try {
+                const res = await fetch(`${API}${endpoint}`, {
+                    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+                });
+                const data = await res.json();
+                if (data.success) {
+                    input.value = '';
+                    appendMessage({ direction:'outbound', msg_type:sendType, body:sendType==='text'?text:null, timestamp:new Date().toISOString(), status:'sent' });
+                } else { alert('Send failed: ' + (data.error || 'Unknown')); }
+            } catch(e) { alert('Send error: ' + e.message); }
+        }
+
+        function appendMessage(m) {
+            const list = document.getElementById('messageList');
+            let content = m.body ? `<div>${escapeHtml(m.body)}</div>` : `<div><em>[${m.msg_type}]</em></div>`;
+            content += `<div class="msg-time">${new Date(m.timestamp).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</div>`;
+            list.innerHTML += `<div class="msg msg-${m.direction}">${content}</div>`;
+            list.scrollTop = list.scrollHeight;
+        }
+
+        function setSendType(type) {
+            sendType = type;
+            document.getElementById('btnText').classList.toggle('active', type==='text');
+            document.getElementById('btnTemplate').classList.toggle('active', type==='template');
+            document.getElementById('btnMedia').classList.toggle('active', type==='media');
+            const input = document.getElementById('msgInput');
+            if (type==='text') input.placeholder = 'Type a message...';
+            else if (type==='template') input.placeholder = 'Template name (e.g. hello_world)...';
+            else input.placeholder = 'Media URL (https://...)...';
+        }
+
+        function connectGlobalWs() {
+            wsGlobal = new WebSocket(`${WS_URL}/ws/updates`);
+            wsGlobal.onopen = () => { document.getElementById('wsStatus').className = 'ws-status ws-connected'; };
+            wsGlobal.onclose = () => { document.getElementById('wsStatus').className = 'ws-status ws-disconnected'; setTimeout(connectGlobalWs, 3000); };
+            wsGlobal.onmessage = (e) => { loadConversations(); };
+        }
+
+        function connectChatWs(convId) {
+            if (wsChat) wsChat.close();
+            wsChat = new WebSocket(`${WS_URL}/ws/chat/${convId}`);
+            wsChat.onmessage = (e) => {
+                const msg = JSON.parse(e.data);
+                appendMessage({ direction:msg.direction, msg_type:msg.msg_type, body:msg.body, timestamp:msg.timestamp, status:'received' });
+            };
+        }
+
+        loadConversations();
+        connectGlobalWs();
+    </script>
+</body>
+</html>
