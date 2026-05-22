@@ -5,6 +5,7 @@ use crate::config::AppConfig;
 use crate::models::conversation;
 use crate::models::message;
 use super::types::*;
+use super::media;
 
 #[derive(serde::Deserialize)]
 pub struct VerifyQuery {
@@ -40,6 +41,7 @@ pub async fn verify(
 pub async fn receive(
     body: web::Json<WebhookPayload>,
     db: web::Data<DatabaseConnection>,
+    config: web::Data<AppConfig>,
 ) -> HttpResponse {
     for entry in &body.entry {
         for change in &entry.changes {
@@ -52,10 +54,11 @@ pub async fn receive(
                 let contact_name = change.value.contacts
                     .as_ref()
                     .and_then(|c| c.first())
-                    .map(|c| c.profile.name.clone());
+                    .and_then(|c| c.profile.as_ref())
+                    .map(|p| p.name.clone());
 
                 for msg in messages {
-                    if let Err(e) = handle_inbound_message(db.get_ref(), msg, &contact_name).await {
+                    if let Err(e) = handle_inbound_message(db.get_ref(), &config, msg, &contact_name).await {
                         tracing::error!("Failed to handle message {}: {}", msg.id, e);
                     }
                 }
@@ -78,14 +81,15 @@ pub async fn receive(
 
 async fn handle_inbound_message(
     db: &DatabaseConnection,
+    config: &AppConfig,
     msg: &InboundMessage,
     contact_name: &Option<String>,
 ) -> Result<(), String> {
     // Find or create conversation
     let conv = find_or_create_conversation(db, &msg.from, contact_name).await?;
 
-    // Extract body & media info
-    let (body, media_url, media_mime) = extract_message_content(msg);
+    // Extract body & media info (download if media)
+    let (body, media_url, media_mime) = extract_and_download_media(config, msg, conv.id).await;
 
     // Parse timestamp
     let ts = msg.timestamp.parse::<i64>().unwrap_or(0);
@@ -163,29 +167,38 @@ async fn find_or_create_conversation(
     new_conv.insert(db).await.map_err(|e| format!("DB insert conversation: {}", e))
 }
 
-fn extract_message_content(msg: &InboundMessage) -> (Option<String>, Option<String>, Option<String>) {
+async fn extract_and_download_media(
+    config: &AppConfig,
+    msg: &InboundMessage,
+    conversation_id: i32,
+) -> (Option<String>, Option<String>, Option<String>) {
     match msg.msg_type.as_str() {
         "text" => (msg.text.as_ref().map(|t| t.body.clone()), None, None),
-        "image" => (
-            msg.image.as_ref().and_then(|i| i.caption.clone()),
-            Some(msg.image.as_ref().map(|i| i.id.clone()).unwrap_or_default()),
-            msg.image.as_ref().and_then(|i| i.mime_type.clone()),
-        ),
-        "document" => (
-            msg.document.as_ref().and_then(|d| d.caption.clone()),
-            Some(msg.document.as_ref().map(|d| d.id.clone()).unwrap_or_default()),
-            msg.document.as_ref().and_then(|d| d.mime_type.clone()),
-        ),
-        "audio" => (
-            None,
-            Some(msg.audio.as_ref().map(|a| a.id.clone()).unwrap_or_default()),
-            msg.audio.as_ref().and_then(|a| a.mime_type.clone()),
-        ),
-        "video" => (
-            msg.video.as_ref().and_then(|v| v.caption.clone()),
-            Some(msg.video.as_ref().map(|v| v.id.clone()).unwrap_or_default()),
-            msg.video.as_ref().and_then(|v| v.mime_type.clone()),
-        ),
+        "image" | "document" | "audio" | "video" => {
+            let media_info = match msg.msg_type.as_str() {
+                "image" => msg.image.as_ref(),
+                "document" => msg.document.as_ref(),
+                "audio" => msg.audio.as_ref(),
+                "video" => msg.video.as_ref(),
+                _ => None,
+            };
+
+            let caption = media_info.and_then(|m| m.caption.clone());
+            let media_id = media_info.map(|m| m.id.clone()).unwrap_or_default();
+
+            // Download media locally
+            match media::download_and_save(config, &media_id, conversation_id).await {
+                Ok(downloaded) => (
+                    caption,
+                    Some(downloaded.local_path),
+                    Some(downloaded.mime_type),
+                ),
+                Err(e) => {
+                    tracing::error!("Media download failed for {}: {}", media_id, e);
+                    (caption, Some(format!("media_id:{}", media_id)), media_info.and_then(|m| m.mime_type.clone()))
+                }
+            }
+        }
         _ => (None, None, None),
     }
 }

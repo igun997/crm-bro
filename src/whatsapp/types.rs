@@ -37,7 +37,7 @@ pub struct Metadata {
 
 #[derive(Debug, Deserialize)]
 pub struct Contact {
-    pub profile: ContactProfile,
+    pub profile: Option<ContactProfile>,
     pub wa_id: String,
 }
 

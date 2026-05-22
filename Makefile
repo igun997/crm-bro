@@ -1,10 +1,10 @@
 .PHONY: run build check test clean fmt lint dev
 
 run:
-	cargo run
+	RUST_LOG=debug cargo run
 
 dev:
-	cargo watch -x run
+	RUST_LOG=debug cargo watch -x run
 
 build:
 	cargo build --release
