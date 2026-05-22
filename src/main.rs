@@ -3,6 +3,7 @@ mod response;
 mod routes;
 mod models;
 mod middleware;
+mod whatsapp;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer, middleware::Logger};
@@ -59,6 +60,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(db.clone()))
             .app_data(web::Data::new(config.clone()))
             .configure(routes::configure)
+            .configure(whatsapp::webhook::configure)
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),
