@@ -14,17 +14,30 @@ use utoipa_swagger_ui::SwaggerUi;
 use config::AppConfig;
 use routes::health::HealthResponse;
 use routes::auth::{LoginRequest, LoginResponse};
+use routes::chat::{ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages, SendTextBody, SendTemplateBody, SendMediaBody, SendResponse};
 
 #[derive(OpenApi)]
 #[openapi(
     paths(
         routes::health::health_check,
         routes::auth::login,
+        routes::chat::list_conversations,
+        routes::chat::get_messages_by_phone,
+        routes::chat::search_messages,
+        routes::chat::send_text,
+        routes::chat::send_template,
+        routes::chat::send_media,
     ),
-    components(schemas(HealthResponse, LoginRequest, LoginResponse)),
+    components(schemas(
+        HealthResponse, LoginRequest, LoginResponse,
+        ConversationResponse, MessageResponse,
+        PaginatedConversations, PaginatedMessages,
+        SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
+    )),
     tags(
         (name = "Health", description = "Health check endpoints"),
         (name = "Auth", description = "Authentication endpoints"),
+        (name = "Chat", description = "WhatsApp chat endpoints"),
     ),
     info(title = "CRM Bro API", version = "0.1.0")
 )]
