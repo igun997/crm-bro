@@ -159,7 +159,7 @@
             list.innerHTML = msgs.map(m => {
                 let content = '';
                 if (m.media_url && m.media_mime && m.media_mime.startsWith('image')) {
-                    content += `<div class="msg-media"><img src="${API}/static/${m.media_url}" alt="image"></div>`;
+                    content += `<div class="msg-media"><img src="${API}/${m.media_url}" alt="image"></div>`;
                 }
                 if (m.body) content += `<div>${escapeHtml(m.body)}</div>`;
                 if (!content) content = `<div><em>[${m.msg_type}]</em></div>`;
