@@ -4,7 +4,7 @@ run:
 	RUST_LOG=debug cargo run
 
 dev:
-	RUST_LOG=debug cargo watch -x run
+	RUST_LOG=debug cargo watch -i media/ -x run
 
 build:
 	cargo build --release
