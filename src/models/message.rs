@@ -17,6 +17,11 @@ pub struct Model {
     pub template_name: Option<String>,
     pub status: String,
     pub timestamp: chrono::NaiveDateTime,
+    pub tenant_id: Option<i32>,
+    pub contact_id: Option<i32>,
+    pub storage_key: Option<String>,
+    pub original_filename: Option<String>,
+    pub size_bytes: Option<i64>,
     pub created_at: chrono::NaiveDateTime,
 }
 
@@ -28,12 +33,14 @@ pub enum Relation {
         to = "super::conversation::Column::Id"
     )]
     Conversation,
+    #[sea_orm(belongs_to = "super::tenant::Entity", from = "Column::TenantId", to = "super::tenant::Column::Id")]
+    Tenant,
+    #[sea_orm(belongs_to = "super::contact::Entity", from = "Column::ContactId", to = "super::contact::Column::Id")]
+    Contact,
 }
 
 impl Related<super::conversation::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Conversation.def()
-    }
+    fn to() -> RelationDef { Relation::Conversation.def() }
 }
 
 impl ActiveModelBehavior for ActiveModel {}

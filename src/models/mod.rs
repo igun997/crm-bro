@@ -1,3 +1,13 @@
 pub mod user;
 pub mod conversation;
 pub mod message;
+pub mod tenant;
+pub mod permission;
+pub mod role;
+pub mod role_permission;
+pub mod user_role;
+pub mod tenant_whatsapp_account;
+pub mod contact;
+pub mod tag;
+pub mod contact_tag;
+pub mod outbox_message;
