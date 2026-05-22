@@ -1,4 +1,6 @@
 use actix_web::{web, HttpResponse, get, post};
+use actix_multipart::Multipart;
+use futures_util::StreamExt;
 use sea_orm::{
     DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait,
     QueryOrder, PaginatorTrait, QuerySelect, Condition, Set, ActiveModelTrait,
@@ -431,7 +433,6 @@ async fn store_outbound_message(
     media_url: Option<&str>,
     wa_message_id: Option<&str>,
 ) {
-    // Find or create conversation
     let conv = conversation::Entity::find()
         .filter(conversation::Column::ContactPhone.eq(phone))
         .one(db)
@@ -446,8 +447,7 @@ async fn store_outbound_message(
             contact_name: Set(None),
             ..Default::default()
         };
-        let result = new_conv.insert(db).await;
-        match result {
+        match new_conv.insert(db).await {
             Ok(c) => c.id,
             Err(e) => { tracing::error!("Failed to create conversation: {}", e); return; }
         }
@@ -473,11 +473,103 @@ async fn store_outbound_message(
         tracing::error!("Failed to store outbound message: {}", e);
     }
 
-    // Update last_message_at
     if let Ok(Some(c)) = conversation::Entity::find_by_id(conv_id).one(db).await {
         let mut update: conversation::ActiveModel = c.into();
         update.last_message_at = Set(Some(now));
         let _ = update.update(db).await;
+    }
+}
+
+/// Upload and send a file via WhatsApp
+#[post("/send/upload")]
+pub async fn send_upload(
+    config: web::Data<AppConfig>,
+    db: web::Data<DatabaseConnection>,
+    mut payload: Multipart,
+) -> HttpResponse {
+    let mut phone: Option<String> = None;
+    let mut caption: Option<String> = None;
+    let mut file_path: Option<String> = None;
+    let mut mime_type = "application/octet-stream".to_string();
+    let mut media_type = "document".to_string();
+
+    while let Some(Ok(mut field)) = payload.next().await {
+        let name = field.name().map(|n| n.to_string()).unwrap_or_default();
+        match name.as_str() {
+            "to" => {
+                let mut data = Vec::new();
+                while let Some(Ok(chunk)) = field.next().await { data.extend_from_slice(&chunk); }
+                phone = Some(String::from_utf8_lossy(&data).to_string());
+            }
+            "caption" => {
+                let mut data = Vec::new();
+                while let Some(Ok(chunk)) = field.next().await { data.extend_from_slice(&chunk); }
+                let val = String::from_utf8_lossy(&data).to_string();
+                if !val.is_empty() { caption = Some(val); }
+            }
+            "file" => {
+                if let Some(ct) = field.content_type() {
+                    mime_type = ct.to_string();
+                }
+                if mime_type.starts_with("image") { media_type = "image".into(); }
+                else if mime_type.starts_with("video") { media_type = "video".into(); }
+                else if mime_type.starts_with("audio") { media_type = "audio".into(); }
+
+                let filename = field.content_disposition()
+                    .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "upload".to_string());
+
+                let dir = std::path::PathBuf::from("media/uploads");
+                tokio::fs::create_dir_all(&dir).await.ok();
+                let dest = dir.join(format!("{}_{}", chrono::Utc::now().timestamp(), filename));
+
+                let mut data = Vec::new();
+                while let Some(Ok(chunk)) = field.next().await { data.extend_from_slice(&chunk); }
+                if let Err(e) = tokio::fs::write(&dest, &data).await {
+                    return HttpResponse::InternalServerError().json(SendResponse {
+                        success: false, wa_message_id: None, error: Some(format!("Save file: {}", e)),
+                    });
+                }
+                file_path = Some(dest.to_string_lossy().to_string());
+            }
+            _ => {}
+        }
+    }
+
+    let phone = match phone {
+        Some(p) => p,
+        None => return HttpResponse::BadRequest().json(SendResponse {
+            success: false, wa_message_id: None, error: Some("Missing 'to' field".into()),
+        }),
+    };
+    let file_path = match file_path {
+        Some(f) => f,
+        None => return HttpResponse::BadRequest().json(SendResponse {
+            success: false, wa_message_id: None, error: Some("Missing 'file' field".into()),
+        }),
+    };
+
+    let sender = WhatsAppSender::new(&config);
+
+    // Upload to Meta
+    let media_id = match sender.upload_media(&file_path, &mime_type).await {
+        Ok(id) => id,
+        Err(e) => return HttpResponse::Ok().json(SendResponse {
+            success: false, wa_message_id: None, error: Some(format!("Upload to Meta: {}", e)),
+        }),
+    };
+
+    // Send using media_id
+    match sender.send_media_by_id(&phone, &media_type, &media_id, caption.as_deref()).await {
+        Ok(id) => {
+            store_outbound_message(db.get_ref(), &phone, &media_type, caption.as_deref(), None, Some(&file_path), Some(&id)).await;
+            HttpResponse::Ok().json(SendResponse {
+                success: true, wa_message_id: Some(id), error: None,
+            })
+        }
+        Err(e) => HttpResponse::Ok().json(SendResponse {
+            success: false, wa_message_id: None, error: Some(e),
+        }),
     }
 }
 
@@ -489,6 +581,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(search_messages)
             .service(send_text)
             .service(send_template)
-            .service(send_media),
+            .service(send_media)
+            .service(send_upload),
     );
 }

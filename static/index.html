@@ -89,6 +89,8 @@
                 <button onclick="setSendType('media')" id="btnMedia">Media</button>
             </div>
             <div class="input-area">
+                <input type="file" id="fileInput" style="display:none" onchange="handleFileSelect()">
+                <button onclick="document.getElementById('fileInput').click()" style="background:#2a3942;padding:10px 12px;border-radius:8px;border:none;color:#8696a0;cursor:pointer" title="Upload file">📎</button>
                 <input type="text" id="msgInput" placeholder="Type a message..." onkeydown="if(event.key==='Enter')sendMessage()">
                 <button onclick="sendMessage()">Send</button>
             </div>
@@ -235,6 +237,27 @@
                 const msg = JSON.parse(e.data);
                 appendMessage({ direction:msg.direction, msg_type:msg.msg_type, body:msg.body, timestamp:msg.timestamp, status:'received' });
             };
+        }
+
+        async function handleFileSelect() {
+            const input = document.getElementById('fileInput');
+            const file = input.files[0];
+            if (!file || !currentConv) return;
+
+            const formData = new FormData();
+            formData.append('to', currentConv.contact_phone);
+            formData.append('file', file);
+            const caption = prompt('Caption (optional):');
+            if (caption) formData.append('caption', caption);
+
+            try {
+                const res = await fetch(`${API}/api/chat/send/upload`, { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.success) {
+                    appendMessage({ direction:'outbound', msg_type:file.type.startsWith('image')?'image':'document', body:caption||file.name, timestamp:new Date().toISOString(), status:'sent' });
+                } else { alert('Upload failed: ' + (data.error || 'Unknown')); }
+            } catch(e) { alert('Upload error: ' + e.message); }
+            input.value = '';
         }
 
         loadConversations();

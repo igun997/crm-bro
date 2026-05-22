@@ -1,5 +1,6 @@
 #![allow(dead_code)]
 use reqwest::Client;
+use reqwest::multipart;
 
 use crate::config::AppConfig;
 use super::types::*;
@@ -105,5 +106,71 @@ impl WhatsAppSender {
             .messages
             .and_then(|m| m.first().map(|msg| msg.id.clone()))
             .ok_or_else(|| "No message ID in response".into())
+    }
+
+    /// Upload media to Meta and get media_id
+    pub async fn upload_media(&self, file_path: &str, mime_type: &str) -> Result<String, String> {
+        let url = format!(
+            "https://graph.facebook.com/{}/{}/media",
+            std::env::var("WA_API_VERSION").unwrap_or_else(|_| "v25.0".into()),
+            std::env::var("WA_PHONE_NUMBER_ID").unwrap_or_default()
+        );
+
+        let file_bytes = tokio::fs::read(file_path)
+            .await
+            .map_err(|e| format!("Read file failed: {}", e))?;
+
+        let filename = std::path::Path::new(file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("file")
+            .to_string();
+
+        let file_part = multipart::Part::bytes(file_bytes)
+            .file_name(filename)
+            .mime_str(mime_type)
+            .map_err(|e| format!("Mime error: {}", e))?;
+
+        let form = multipart::Form::new()
+            .text("messaging_product", "whatsapp")
+            .text("type", mime_type.to_string())
+            .part("file", file_part);
+
+        let resp = self.client
+            .post(&url)
+            .bearer_auth(&self.access_token)
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| format!("Upload failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            return Err(format!("Upload error: {}", body));
+        }
+
+        let json: serde_json::Value = resp.json().await
+            .map_err(|e| format!("Parse upload response: {}", e))?;
+
+        json["id"].as_str()
+            .map(|s| s.to_string())
+            .ok_or_else(|| "No media ID in upload response".into())
+    }
+
+    /// Send media using uploaded media_id
+    pub async fn send_media_by_id(&self, to: &str, media_type: &str, media_id: &str, caption: Option<&str>) -> Result<String, String> {
+        let media_obj = serde_json::json!({
+            "id": media_id,
+            "caption": caption
+        });
+
+        let payload = serde_json::json!({
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": media_type,
+            media_type: media_obj
+        });
+
+        self.post_message(&payload).await
     }
 }
