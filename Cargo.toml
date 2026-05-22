@@ -5,9 +5,12 @@ edition = "2021"
 
 [dependencies]
 # Web framework
+actix = "0.13"
 actix-web = "4"
 actix-cors = "0.7"
 actix-rt = "2"
+actix-ws = "0.3"
+actix-web-actors = "4"
 
 # ORM - SeaORM with MySQL
 sea-orm = { version = "1", features = ["sqlx-mysql", "runtime-tokio-rustls", "macros"] }

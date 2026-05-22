@@ -4,6 +4,7 @@ use sea_orm::{DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait, Set, Ac
 use crate::config::AppConfig;
 use crate::models::conversation;
 use crate::models::message;
+use crate::ws::hub::{ChatHub, ChatMessage as WsChatMessage};
 use super::types::*;
 use super::media;
 
@@ -42,6 +43,7 @@ pub async fn receive(
     body: web::Json<WebhookPayload>,
     db: web::Data<DatabaseConnection>,
     config: web::Data<AppConfig>,
+    hub: web::Data<actix::Addr<ChatHub>>,
 ) -> HttpResponse {
     for entry in &body.entry {
         for change in &entry.changes {
@@ -58,7 +60,7 @@ pub async fn receive(
                     .map(|p| p.name.clone());
 
                 for msg in messages {
-                    if let Err(e) = handle_inbound_message(db.get_ref(), &config, msg, &contact_name).await {
+                    if let Err(e) = handle_inbound_message(db.get_ref(), &config, &hub, msg, &contact_name).await {
                         tracing::error!("Failed to handle message {}: {}", msg.id, e);
                     }
                 }
@@ -82,6 +84,7 @@ pub async fn receive(
 async fn handle_inbound_message(
     db: &DatabaseConnection,
     config: &AppConfig,
+    hub: &actix::Addr<ChatHub>,
     msg: &InboundMessage,
     contact_name: &Option<String>,
 ) -> Result<(), String> {
@@ -114,11 +117,24 @@ async fn handle_inbound_message(
     new_msg.insert(db).await.map_err(|e| format!("DB insert message: {}", e))?;
 
     // Update conversation last_message_at
+    let conv_id = conv.id;
     let mut conv_update: conversation::ActiveModel = conv.into();
     conv_update.last_message_at = Set(Some(timestamp));
     conv_update.update(db).await.map_err(|e| format!("DB update conversation: {}", e))?;
 
     tracing::info!("Stored inbound message {} from {}", msg.id, msg.from);
+
+    // Broadcast to WebSocket clients
+    hub.do_send(WsChatMessage {
+        conversation_id: conv_id,
+        message_id: 0, // we don't have the inserted ID easily here
+        direction: "inbound".into(),
+        msg_type: msg.msg_type.clone(),
+        body: msg.text.as_ref().map(|t| t.body.clone()),
+        contact_phone: msg.from.clone(),
+        contact_name: contact_name.clone(),
+        timestamp: timestamp.to_string(),
+    });
     Ok(())
 }
 

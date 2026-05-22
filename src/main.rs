@@ -4,12 +4,14 @@ mod routes;
 mod models;
 mod middleware;
 mod whatsapp;
+mod ws;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer, middleware::Logger};
 use sea_orm::Database;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use actix::Actor;
 
 use config::AppConfig;
 use routes::health::HealthResponse;
@@ -60,6 +62,9 @@ async fn main() -> std::io::Result<()> {
     let host = config.server_host.clone();
     let port = config.server_port;
 
+    // Start WebSocket hub
+    let hub = ws::hub::ChatHub::new().start();
+
     HttpServer::new(move || {
         let cors = Cors::default()
             .allow_any_origin()
@@ -72,8 +77,10 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .app_data(web::Data::new(db.clone()))
             .app_data(web::Data::new(config.clone()))
+            .app_data(web::Data::new(hub.clone()))
             .configure(routes::configure)
             .configure(whatsapp::webhook::configure)
+            .configure(ws::configure)
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),
