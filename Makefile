@@ -26,3 +26,11 @@ lint:
 
 db-check:
 	mysql -u REDACTED_DB_USER -p'REDACTED_DB_PASSWORD' -h localhost crmbro -e "SELECT 'Connection successful!' as status;"
+
+migrate:
+	@echo "Running migrations..."
+	@for f in migrations/*.sql; do \
+		echo "Applying $$f"; \
+		mysql -u REDACTED_DB_USER -p'REDACTED_DB_PASSWORD' -h localhost crmbro < $$f; \
+	done
+	@echo "Done."
