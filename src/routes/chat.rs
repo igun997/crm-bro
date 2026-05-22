@@ -1,7 +1,7 @@
 use actix_web::{web, HttpResponse, get, post};
 use sea_orm::{
     DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait,
-    QueryOrder, PaginatorTrait, QuerySelect, Condition,
+    QueryOrder, PaginatorTrait, QuerySelect, Condition, Set, ActiveModelTrait,
 };
 use serde::{Deserialize, Serialize};
 use utoipa::{ToSchema, IntoParams};
@@ -345,13 +345,17 @@ pub async fn search_messages(
 #[post("/send/text")]
 pub async fn send_text(
     config: web::Data<AppConfig>,
+    db: web::Data<DatabaseConnection>,
     body: web::Json<SendTextBody>,
 ) -> HttpResponse {
     let sender = WhatsAppSender::new(&config);
     match sender.send_text(&body.to, &body.message).await {
-        Ok(id) => HttpResponse::Ok().json(SendResponse {
-            success: true, wa_message_id: Some(id), error: None,
-        }),
+        Ok(id) => {
+            store_outbound_message(db.get_ref(), &body.to, "text", Some(&body.message), None, None, Some(&id)).await;
+            HttpResponse::Ok().json(SendResponse {
+                success: true, wa_message_id: Some(id), error: None,
+            })
+        },
         Err(e) => HttpResponse::Ok().json(SendResponse {
             success: false, wa_message_id: None, error: Some(e),
         }),
@@ -371,13 +375,17 @@ pub async fn send_text(
 #[post("/send/template")]
 pub async fn send_template(
     config: web::Data<AppConfig>,
+    db: web::Data<DatabaseConnection>,
     body: web::Json<SendTemplateBody>,
 ) -> HttpResponse {
     let sender = WhatsAppSender::new(&config);
     match sender.send_template(&body.to, &body.template_name, &body.language, None).await {
-        Ok(id) => HttpResponse::Ok().json(SendResponse {
-            success: true, wa_message_id: Some(id), error: None,
-        }),
+        Ok(id) => {
+            store_outbound_message(db.get_ref(), &body.to, "template", None, Some(&body.template_name), None, Some(&id)).await;
+            HttpResponse::Ok().json(SendResponse {
+                success: true, wa_message_id: Some(id), error: None,
+            })
+        },
         Err(e) => HttpResponse::Ok().json(SendResponse {
             success: false, wa_message_id: None, error: Some(e),
         }),
@@ -397,16 +405,79 @@ pub async fn send_template(
 #[post("/send/media")]
 pub async fn send_media(
     config: web::Data<AppConfig>,
+    db: web::Data<DatabaseConnection>,
     body: web::Json<SendMediaBody>,
 ) -> HttpResponse {
     let sender = WhatsAppSender::new(&config);
     match sender.send_media(&body.to, &body.media_type, &body.url, body.caption.as_deref()).await {
-        Ok(id) => HttpResponse::Ok().json(SendResponse {
-            success: true, wa_message_id: Some(id), error: None,
-        }),
+        Ok(id) => {
+            store_outbound_message(db.get_ref(), &body.to, &body.media_type, body.caption.as_deref(), None, Some(&body.url), Some(&id)).await;
+            HttpResponse::Ok().json(SendResponse {
+                success: true, wa_message_id: Some(id), error: None,
+            })
+        },
         Err(e) => HttpResponse::Ok().json(SendResponse {
             success: false, wa_message_id: None, error: Some(e),
         }),
+    }
+}
+
+async fn store_outbound_message(
+    db: &DatabaseConnection,
+    phone: &str,
+    msg_type: &str,
+    body: Option<&str>,
+    template_name: Option<&str>,
+    media_url: Option<&str>,
+    wa_message_id: Option<&str>,
+) {
+    // Find or create conversation
+    let conv = conversation::Entity::find()
+        .filter(conversation::Column::ContactPhone.eq(phone))
+        .one(db)
+        .await
+        .unwrap_or(None);
+
+    let conv_id = if let Some(c) = conv {
+        c.id
+    } else {
+        let new_conv = conversation::ActiveModel {
+            contact_phone: Set(phone.into()),
+            contact_name: Set(None),
+            ..Default::default()
+        };
+        let result = new_conv.insert(db).await;
+        match result {
+            Ok(c) => c.id,
+            Err(e) => { tracing::error!("Failed to create conversation: {}", e); return; }
+        }
+    };
+
+    let now = chrono::Utc::now().naive_utc();
+
+    let new_msg = message::ActiveModel {
+        conversation_id: Set(conv_id),
+        wa_message_id: Set(wa_message_id.map(|s| s.to_string())),
+        direction: Set("outbound".into()),
+        msg_type: Set(msg_type.into()),
+        body: Set(body.map(|s| s.to_string())),
+        media_url: Set(media_url.map(|s| s.to_string())),
+        media_mime: Set(None),
+        template_name: Set(template_name.map(|s| s.to_string())),
+        status: Set("sent".into()),
+        timestamp: Set(now),
+        ..Default::default()
+    };
+
+    if let Err(e) = new_msg.insert(db).await {
+        tracing::error!("Failed to store outbound message: {}", e);
+    }
+
+    // Update last_message_at
+    if let Ok(Some(c)) = conversation::Entity::find_by_id(conv_id).one(db).await {
+        let mut update: conversation::ActiveModel = c.into();
+        update.last_message_at = Set(Some(now));
+        let _ = update.update(db).await;
     }
 }
 
