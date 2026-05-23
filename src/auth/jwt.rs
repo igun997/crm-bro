@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 /// JWT claims used across the application.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
-    /// Subject — user id as string
-    pub sub: String,
+    /// Subject — user id as i32
+    pub sub: i32,
     /// Tenant the user belongs to (None for superadmins without a tenant)
     pub tenant_id: Option<i32>,
     /// Whether the user is a platform superadmin
@@ -44,7 +44,7 @@ pub fn build_claims(
     let now = chrono::Utc::now().timestamp() as usize;
     let exp = (chrono::Utc::now() + chrono::Duration::seconds(expires_in_secs)).timestamp() as usize;
     Claims {
-        sub: user_id.to_string(),
+        sub: user_id,
         tenant_id,
         is_superadmin,
         exp,
@@ -62,7 +62,7 @@ mod tests {
         let secret = "test-secret";
         let token = encode_jwt(&claims, secret).expect("encode");
         let decoded = decode_jwt(&token, secret).expect("decode");
-        assert_eq!(decoded.claims.sub, "42");
+        assert_eq!(decoded.claims.sub, 42);
         assert_eq!(decoded.claims.tenant_id, Some(1));
         assert!(!decoded.claims.is_superadmin);
     }
