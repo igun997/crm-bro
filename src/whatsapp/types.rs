@@ -65,11 +65,12 @@ pub struct TextBody {
     pub body: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct MediaInfo {
     pub id: String,
     pub mime_type: Option<String>,
     pub caption: Option<String>,
+    pub filename: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

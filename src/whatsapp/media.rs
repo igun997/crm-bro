@@ -13,16 +13,23 @@ pub struct DownloadedMedia {
     pub mime_type: String,
 }
 
+#[derive(Debug)]
+pub struct DownloadedMediaBytes {
+    pub bytes: bytes::Bytes,
+    pub mime_type: String,
+}
+
 /// Get media URL from Meta API using media ID
 async fn get_media_url(client: &Client, config: &AppConfig, media_id: &str) -> Result<String, String> {
-    let url = format!(
-        "https://graph.facebook.com/{}/{}",
-        config.wa_api_version, media_id
-    );
+    get_media_url_with_token(client, &config.wa_api_version, &config.wa_access_token, media_id).await
+}
+
+async fn get_media_url_with_token(client: &Client, api_version: &str, access_token: &str, media_id: &str) -> Result<String, String> {
+    let url = format!("https://graph.facebook.com/{}/{}", api_version, media_id);
 
     let resp = client
         .get(&url)
-        .bearer_auth(&config.wa_access_token)
+        .bearer_auth(access_token)
         .send()
         .await
         .map_err(|e| format!("Get media URL failed: {}", e))?;
@@ -45,9 +52,14 @@ async fn get_media_url(client: &Client, config: &AppConfig, media_id: &str) -> R
 
 /// Download media binary from Meta CDN
 async fn download_media_binary(client: &Client, config: &AppConfig, url: &str) -> Result<(Vec<u8>, String), String> {
+    let (bytes, mime) = download_media_binary_with_token(client, &config.wa_access_token, url).await?;
+    Ok((bytes.to_vec(), mime))
+}
+
+async fn download_media_binary_with_token(client: &Client, access_token: &str, url: &str) -> Result<(bytes::Bytes, String), String> {
     let resp = client
         .get(url)
-        .bearer_auth(&config.wa_access_token)
+        .bearer_auth(access_token)
         .send()
         .await
         .map_err(|e| format!("Download media failed: {}", e))?;
@@ -68,7 +80,7 @@ async fn download_media_binary(client: &Client, config: &AppConfig, url: &str) -
         .await
         .map_err(|e| format!("Read media bytes: {}", e))?;
 
-    Ok((bytes.to_vec(), mime))
+    Ok((bytes, mime))
 }
 
 /// Download media by ID and save to local disk
@@ -103,7 +115,18 @@ pub async fn download_and_save(
     Ok(DownloadedMedia { local_path, mime_type })
 }
 
-fn mime_to_extension(mime: &str) -> &str {
+pub async fn download_bytes(
+    api_version: &str,
+    access_token: &str,
+    media_id: &str,
+) -> Result<DownloadedMediaBytes, String> {
+    let client = Client::new();
+    let media_url = get_media_url_with_token(&client, api_version, access_token, media_id).await?;
+    let (bytes, mime_type) = download_media_binary_with_token(&client, access_token, &media_url).await?;
+    Ok(DownloadedMediaBytes { bytes, mime_type })
+}
+
+pub fn mime_to_extension(mime: &str) -> &str {
     match mime {
         "image/jpeg" => "jpg",
         "image/png" => "png",

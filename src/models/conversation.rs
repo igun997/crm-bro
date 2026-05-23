@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: i32,
-    #[sea_orm(unique)]
     pub contact_phone: String,
     pub contact_name: Option<String>,
     pub last_message_at: Option<chrono::NaiveDateTime>,
@@ -21,16 +20,30 @@ pub struct Model {
 pub enum Relation {
     #[sea_orm(has_many = "super::message::Entity")]
     Messages,
-    #[sea_orm(belongs_to = "super::tenant::Entity", from = "Column::TenantId", to = "super::tenant::Column::Id")]
+    #[sea_orm(
+        belongs_to = "super::tenant::Entity",
+        from = "Column::TenantId",
+        to = "super::tenant::Column::Id"
+    )]
     Tenant,
-    #[sea_orm(belongs_to = "super::contact::Entity", from = "Column::ContactId", to = "super::contact::Column::Id")]
+    #[sea_orm(
+        belongs_to = "super::contact::Entity",
+        from = "Column::ContactId",
+        to = "super::contact::Column::Id"
+    )]
     Contact,
-    #[sea_orm(belongs_to = "super::tenant_whatsapp_account::Entity", from = "Column::WhatsappAccountId", to = "super::tenant_whatsapp_account::Column::Id")]
+    #[sea_orm(
+        belongs_to = "super::tenant_whatsapp_account::Entity",
+        from = "Column::WhatsappAccountId",
+        to = "super::tenant_whatsapp_account::Column::Id"
+    )]
     WhatsappAccount,
 }
 
 impl Related<super::message::Entity> for Entity {
-    fn to() -> RelationDef { Relation::Messages.def() }
+    fn to() -> RelationDef {
+        Relation::Messages.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}
