@@ -15,6 +15,7 @@ use config::AppConfig;
 use routes::health::HealthResponse;
 use routes::auth::{LoginRequest, LoginResponse, LoginUser};
 use routes::admin::{CreateTenantRequest, TenantResponse, CreateTenantUserRequest, AdminUserResponse};
+use routes::settings::{WhatsAppAccountResponse, UpsertWhatsAppAccountRequest, PatchWhatsAppAccountRequest};
 use routes::chat::{
     ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages,
     SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
@@ -27,6 +28,9 @@ use routes::chat::{
         routes::auth::login,
         routes::admin::create_tenant,
         routes::admin::create_tenant_user,
+        routes::settings::list_whatsapp_accounts,
+        routes::settings::create_whatsapp_account,
+        routes::settings::update_whatsapp_account,
         routes::chat::list_conversations,
         routes::chat::get_messages_by_phone,
         routes::chat::search_messages,
@@ -37,6 +41,7 @@ use routes::chat::{
     components(schemas(
         HealthResponse, LoginRequest, LoginResponse, LoginUser,
         CreateTenantRequest, TenantResponse, CreateTenantUserRequest, AdminUserResponse,
+        WhatsAppAccountResponse, UpsertWhatsAppAccountRequest, PatchWhatsAppAccountRequest,
         ConversationResponse, MessageResponse,
         PaginatedConversations, PaginatedMessages,
         SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
@@ -45,6 +50,7 @@ use routes::chat::{
         (name = "Health", description = "Health check endpoints"),
         (name = "Auth", description = "Authentication endpoints"),
         (name = "Admin", description = "Tenant and user administration endpoints"),
+        (name = "Settings", description = "Tenant settings endpoints"),
         (name = "Chat", description = "WhatsApp chat endpoints"),
     ),
     info(title = "CRM Bro API", version = "0.1.0")
