@@ -142,6 +142,13 @@ mod tests {
             wa_access_token: String::new(),
             wa_verify_token: String::new(),
             wa_api_version: "v25.0".to_string(),
+            storage_backend: "local".to_string(),
+            storage_local_dir: "media".to_string(),
+            r2_endpoint: None,
+            r2_access_key_id: None,
+            r2_secret_access_key: None,
+            r2_bucket: None,
+            r2_public_base_url: None,
         };
 
         let app = test::init_service(
@@ -165,7 +172,10 @@ mod tests {
 
     #[actix_rt::test]
     async fn seeded_admin_can_login_with_real_db_user() {
-        assert_eq!(login_status("admin@example.invalid", "REDACTED_ADMIN_PASSWORD").await, StatusCode::OK);
+        assert_eq!(
+            login_status("admin@example.invalid", "REDACTED_ADMIN_PASSWORD").await,
+            StatusCode::OK
+        );
     }
 
     #[actix_rt::test]

@@ -713,6 +713,13 @@ mod tests {
             wa_access_token: String::new(),
             wa_verify_token: String::new(),
             wa_api_version: "v25.0".to_string(),
+            storage_backend: "local".to_string(),
+            storage_local_dir: "media".to_string(),
+            r2_endpoint: None,
+            r2_access_key_id: None,
+            r2_secret_access_key: None,
+            r2_bucket: None,
+            r2_public_base_url: None,
         };
         let app = awtest::init_service(
             App::new()

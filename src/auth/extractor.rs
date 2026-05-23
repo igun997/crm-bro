@@ -1,13 +1,13 @@
-use std::collections::HashSet;
 use actix_web::{dev::Payload, error::ErrorUnauthorized, web, Error, FromRequest, HttpRequest};
 use futures_util::future::LocalBoxFuture;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use std::collections::HashSet;
 
 use crate::auth::context::AuthContext;
 use crate::auth::jwt::decode_jwt;
 use crate::config::AppConfig;
-use crate::models::{permission, role_permission, user, user_role};
 use crate::middleware::extract_bearer;
+use crate::models::{permission, role_permission, user, user_role};
 
 #[derive(Debug, Clone)]
 pub struct CurrentUser(pub AuthContext);
@@ -112,7 +112,10 @@ mod tests {
     use sea_orm::Database;
 
     use super::CurrentUser;
-    use crate::{auth::jwt::{build_claims, encode_jwt}, config::AppConfig};
+    use crate::{
+        auth::jwt::{build_claims, encode_jwt},
+        config::AppConfig,
+    };
 
     async fn whoami(current: CurrentUser) -> HttpResponse {
         HttpResponse::Ok().json(serde_json::json!({
@@ -137,6 +140,13 @@ mod tests {
             wa_access_token: String::new(),
             wa_verify_token: String::new(),
             wa_api_version: "v25.0".to_string(),
+            storage_backend: "local".to_string(),
+            storage_local_dir: "media".to_string(),
+            r2_endpoint: None,
+            r2_access_key_id: None,
+            r2_secret_access_key: None,
+            r2_bucket: None,
+            r2_public_base_url: None,
         };
 
         let app = test::init_service(

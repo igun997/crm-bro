@@ -1,5 +1,8 @@
 use actix_web::{post, web, HttpResponse};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder,
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -107,7 +110,10 @@ pub async fn create_tenant_user(
     }
 
     let tenant_id = path.into_inner();
-    let tenant_exists = match tenant::Entity::find_by_id(tenant_id).one(db.get_ref()).await {
+    let tenant_exists = match tenant::Entity::find_by_id(tenant_id)
+        .one(db.get_ref())
+        .await
+    {
         Ok(Some(_)) => true,
         Ok(None) => false,
         Err(error) => {
@@ -226,7 +232,11 @@ mod tests {
         config::AppConfig,
     };
 
-    async fn post_tenant(token: Option<String>, name: &str, slug: &str) -> (StatusCode, serde_json::Value) {
+    async fn post_tenant(
+        token: Option<String>,
+        name: &str,
+        slug: &str,
+    ) -> (StatusCode, serde_json::Value) {
         let _ = dotenvy::dotenv();
         let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL for admin tests");
         let db = Database::connect(&database_url).await.expect("db connect");
@@ -239,6 +249,13 @@ mod tests {
             wa_access_token: String::new(),
             wa_verify_token: String::new(),
             wa_api_version: "v25.0".to_string(),
+            storage_backend: "local".to_string(),
+            storage_local_dir: "media".to_string(),
+            r2_endpoint: None,
+            r2_access_key_id: None,
+            r2_secret_access_key: None,
+            r2_bucket: None,
+            r2_public_base_url: None,
         };
 
         let app = test::init_service(
@@ -289,6 +306,13 @@ mod tests {
             wa_access_token: String::new(),
             wa_verify_token: String::new(),
             wa_api_version: "v25.0".to_string(),
+            storage_backend: "local".to_string(),
+            storage_local_dir: "media".to_string(),
+            r2_endpoint: None,
+            r2_access_key_id: None,
+            r2_secret_access_key: None,
+            r2_bucket: None,
+            r2_public_base_url: None,
         };
 
         let app = test::init_service(
@@ -319,7 +343,10 @@ mod tests {
 
     #[actix_rt::test]
     async fn superadmin_can_create_tenant() {
-        let slug = format!("test-tenant-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap());
+        let slug = format!(
+            "test-tenant-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        );
         let (status, body) = post_tenant(Some(admin_token()), "Test Tenant", &slug).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["slug"], slug);
@@ -335,12 +362,14 @@ mod tests {
     async fn superadmin_can_create_tenant_user() {
         let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap();
         let slug = format!("test-user-tenant-{suffix}");
-        let (tenant_status, tenant_body) = post_tenant(Some(admin_token()), "User Tenant", &slug).await;
+        let (tenant_status, tenant_body) =
+            post_tenant(Some(admin_token()), "User Tenant", &slug).await;
         assert_eq!(tenant_status, StatusCode::OK);
         let tenant_id = tenant_body["id"].as_i64().expect("tenant id") as i32;
 
         let email = format!("agent-{suffix}@example.com");
-        let (user_status, user_body) = post_tenant_user(Some(admin_token()), tenant_id, &email).await;
+        let (user_status, user_body) =
+            post_tenant_user(Some(admin_token()), tenant_id, &email).await;
         assert_eq!(user_status, StatusCode::OK);
         assert_eq!(user_body["email"], email);
         assert_eq!(user_body["tenant_id"], tenant_id);
@@ -352,18 +381,20 @@ mod tests {
     async fn tenant_user_cannot_create_tenant() {
         let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap();
         let slug = format!("test-forbidden-tenant-{suffix}");
-        let (tenant_status, tenant_body) = post_tenant(Some(admin_token()), "Forbidden Tenant", &slug).await;
+        let (tenant_status, tenant_body) =
+            post_tenant(Some(admin_token()), "Forbidden Tenant", &slug).await;
         assert_eq!(tenant_status, StatusCode::OK);
         let tenant_id = tenant_body["id"].as_i64().expect("tenant id") as i32;
 
         let email = format!("tenant-user-{suffix}@example.com");
-        let (user_status, user_body) = post_tenant_user(Some(admin_token()), tenant_id, &email).await;
+        let (user_status, user_body) =
+            post_tenant_user(Some(admin_token()), tenant_id, &email).await;
         assert_eq!(user_status, StatusCode::OK);
         let user_id = user_body["id"].as_i64().expect("user id") as i32;
 
         let denied_slug = format!("denied-{suffix}");
-        let (denied_status, _) = post_tenant(Some(token_for_user(user_id)), "Denied", &denied_slug).await;
+        let (denied_status, _) =
+            post_tenant(Some(token_for_user(user_id)), "Denied", &denied_slug).await;
         assert_eq!(denied_status, StatusCode::FORBIDDEN);
     }
 }
-

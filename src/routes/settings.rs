@@ -1,5 +1,7 @@
 use actix_web::{get, patch, post, web, HttpResponse};
-use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use sea_orm::{
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
+};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
@@ -67,7 +69,10 @@ pub async fn list_whatsapp_accounts(
         .await
     {
         Ok(accounts) => HttpResponse::Ok().json(
-            accounts.into_iter().map(account_response).collect::<Vec<_>>()
+            accounts
+                .into_iter()
+                .map(account_response)
+                .collect::<Vec<_>>(),
         ),
         Err(error) => {
             tracing::error!(%error, "Failed to list WhatsApp accounts");
@@ -104,7 +109,10 @@ pub async fn create_whatsapp_account(
         display_phone_number: Set(body.display_phone_number.clone()),
         access_token: Set(body.access_token.clone()),
         verify_token: Set(body.verify_token.clone()),
-        api_version: Set(body.api_version.clone().unwrap_or_else(|| "v25.0".to_string())),
+        api_version: Set(body
+            .api_version
+            .clone()
+            .unwrap_or_else(|| "v25.0".to_string())),
         is_active: Set(body.is_active.unwrap_or(true)),
         ..Default::default()
     };
@@ -165,13 +173,27 @@ pub async fn update_whatsapp_account(
     };
 
     let mut active: tenant_whatsapp_account::ActiveModel = account.into();
-    if let Some(value) = &body.phone_number_id { active.phone_number_id = Set(value.clone()); }
-    if let Some(value) = &body.business_account_id { active.business_account_id = Set(value.clone()); }
-    if let Some(value) = &body.display_phone_number { active.display_phone_number = Set(Some(value.clone())); }
-    if let Some(value) = &body.access_token { active.access_token = Set(value.clone()); }
-    if let Some(value) = &body.verify_token { active.verify_token = Set(value.clone()); }
-    if let Some(value) = &body.api_version { active.api_version = Set(value.clone()); }
-    if let Some(value) = body.is_active { active.is_active = Set(value); }
+    if let Some(value) = &body.phone_number_id {
+        active.phone_number_id = Set(value.clone());
+    }
+    if let Some(value) = &body.business_account_id {
+        active.business_account_id = Set(value.clone());
+    }
+    if let Some(value) = &body.display_phone_number {
+        active.display_phone_number = Set(Some(value.clone()));
+    }
+    if let Some(value) = &body.access_token {
+        active.access_token = Set(value.clone());
+    }
+    if let Some(value) = &body.verify_token {
+        active.verify_token = Set(value.clone());
+    }
+    if let Some(value) = &body.api_version {
+        active.api_version = Set(value.clone());
+    }
+    if let Some(value) = body.is_active {
+        active.is_active = Set(value);
+    }
 
     match active.update(db.get_ref()).await {
         Ok(account) => HttpResponse::Ok().json(account_response(account)),
@@ -230,7 +252,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
 #[cfg(test)]
 mod tests {
     use actix_web::{http::StatusCode, test as awtest, web, App};
-    use sea_orm::{ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, EntityTrait, QueryFilter};
+    use sea_orm::{
+        ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, EntityTrait, QueryFilter,
+    };
 
     use super::mask_token;
     use crate::auth::jwt::{build_claims, encode_jwt};
@@ -326,8 +350,11 @@ mod tests {
         .await
         .expect("user role");
 
-        let token = encode_jwt(&build_claims(user.id, Some(tenant.id), false, 3600), "test-settings-secret")
-            .expect("token");
+        let token = encode_jwt(
+            &build_claims(user.id, Some(tenant.id), false, 3600),
+            "test-settings-secret",
+        )
+        .expect("token");
         (token, tenant.id)
     }
 
@@ -346,6 +373,13 @@ mod tests {
             wa_access_token: String::new(),
             wa_verify_token: String::new(),
             wa_api_version: "v25.0".to_string(),
+            storage_backend: "local".to_string(),
+            storage_local_dir: "media".to_string(),
+            r2_endpoint: None,
+            r2_access_key_id: None,
+            r2_secret_access_key: None,
+            r2_bucket: None,
+            r2_public_base_url: None,
         };
         let app = awtest::init_service(
             App::new()
@@ -354,7 +388,10 @@ mod tests {
                 .configure(super::configure),
         )
         .await;
-        let phone_number_id = format!("phone-{}", chrono::Utc::now().timestamp_nanos_opt().unwrap());
+        let phone_number_id = format!(
+            "phone-{}",
+            chrono::Utc::now().timestamp_nanos_opt().unwrap()
+        );
 
         let create_req = awtest::TestRequest::post()
             .uri("/settings/whatsapp")
@@ -371,7 +408,8 @@ mod tests {
 
         let create_resp = awtest::call_service(&app, create_req).await;
         assert_eq!(create_resp.status(), StatusCode::OK);
-        let create_body: serde_json::Value = serde_json::from_slice(&awtest::read_body(create_resp).await).unwrap();
+        let create_body: serde_json::Value =
+            serde_json::from_slice(&awtest::read_body(create_resp).await).unwrap();
         assert_eq!(create_body["tenant_id"], tenant_id);
         assert_eq!(create_body["access_token_masked"], "abcd...3456");
         assert!(create_body.get("access_token").is_none());
@@ -387,7 +425,8 @@ mod tests {
             .to_request();
         let patch_resp = awtest::call_service(&app, patch_req).await;
         assert_eq!(patch_resp.status(), StatusCode::OK);
-        let patch_body: serde_json::Value = serde_json::from_slice(&awtest::read_body(patch_resp).await).unwrap();
+        let patch_body: serde_json::Value =
+            serde_json::from_slice(&awtest::read_body(patch_resp).await).unwrap();
         assert_eq!(patch_body["access_token_masked"], "upda...9876");
         assert_eq!(patch_body["is_active"], false);
         assert!(patch_body.get("access_token").is_none());
@@ -398,8 +437,17 @@ mod tests {
             .to_request();
         let list_resp = awtest::call_service(&app, list_req).await;
         assert_eq!(list_resp.status(), StatusCode::OK);
-        let list_body: serde_json::Value = serde_json::from_slice(&awtest::read_body(list_resp).await).unwrap();
-        assert!(list_body.as_array().unwrap().iter().all(|account| account["tenant_id"] == tenant_id));
-        assert!(list_body.as_array().unwrap().iter().all(|account| account.get("access_token").is_none()));
+        let list_body: serde_json::Value =
+            serde_json::from_slice(&awtest::read_body(list_resp).await).unwrap();
+        assert!(list_body
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|account| account["tenant_id"] == tenant_id));
+        assert!(list_body
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|account| account.get("access_token").is_none()));
     }
 }

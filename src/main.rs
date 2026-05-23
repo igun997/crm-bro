@@ -1,5 +1,6 @@
 use crm_bro::config;
 use crm_bro::routes;
+use crm_bro::storage::StorageService;
 use crm_bro::whatsapp;
 use crm_bro::ws;
 
@@ -86,6 +87,9 @@ async fn main() -> std::io::Result<()> {
         .await
         .expect("Failed to connect to database");
 
+    let storage =
+        StorageService::from_config(&config).expect("Failed to initialize storage service");
+
     tracing::info!("Connected to database");
     tracing::info!(
         "Starting server at {}:{}",
@@ -95,6 +99,7 @@ async fn main() -> std::io::Result<()> {
 
     let host = config.server_host.clone();
     let port = config.server_port;
+    let media_dir = config.storage_local_dir.clone();
 
     // Start WebSocket hub
     let hub = ws::hub::ChatHub::new().start();
@@ -111,12 +116,13 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .app_data(web::Data::new(db.clone()))
             .app_data(web::Data::new(config.clone()))
+            .app_data(web::Data::new(storage.clone()))
             .app_data(web::Data::new(hub.clone()))
             .configure(routes::configure)
             .configure(whatsapp::webhook::configure)
             .configure(ws::configure)
             .service(afiles::Files::new("/static", "./static").index_file("index.html"))
-            .service(afiles::Files::new("/media", "./media"))
+            .service(afiles::Files::new("/media", media_dir.clone()))
             .service(
                 SwaggerUi::new("/swagger-ui/{_:.*}")
                     .url("/api-docs/openapi.json", ApiDoc::openapi()),
