@@ -1,11 +1,7 @@
-mod auth;
-mod config;
-mod response;
-mod routes;
-mod models;
-mod middleware;
-mod whatsapp;
-mod ws;
+use crm_bro::config;
+use crm_bro::routes;
+use crm_bro::whatsapp;
+use crm_bro::ws;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer, middleware::Logger};
@@ -18,7 +14,10 @@ use actix::Actor;
 use config::AppConfig;
 use routes::health::HealthResponse;
 use routes::auth::{LoginRequest, LoginResponse};
-use routes::chat::{ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages, SendTextBody, SendTemplateBody, SendMediaBody, SendResponse};
+use routes::chat::{
+    ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages,
+    SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
+};
 
 #[derive(OpenApi)]
 #[openapi(

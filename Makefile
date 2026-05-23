@@ -38,3 +38,6 @@ migrate:
 static:
 	@echo "Serving static at http://localhost:3000"
 	python3 -m http.server 3000 --directory static
+
+seed-admin:
+	cargo run --bin seed_admin -- --email "$(EMAIL)" --password "$(PASSWORD)" --name "$(NAME)"
