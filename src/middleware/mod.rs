@@ -1,6 +1,5 @@
 use actix_web::{dev::ServiceRequest, Error};
 use actix_web::error::ErrorUnauthorized;
-use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 
 use crate::auth::jwt::Claims;
 
@@ -9,12 +8,8 @@ pub async fn validate_token(req: &ServiceRequest, token: &str) -> Result<Claims,
     let config = req.app_data::<actix_web::web::Data<crate::config::AppConfig>>()
         .ok_or_else(|| ErrorUnauthorized("Server config missing"))?;
 
-    let token_data = decode::<Claims>(
-        token,
-        &DecodingKey::from_secret(config.jwt_secret.as_bytes()),
-        &Validation::new(Algorithm::HS256),
-    )
-    .map_err(|e| ErrorUnauthorized(format!("Invalid token: {}", e)))?;
+    let token_data = crate::auth::jwt::decode_jwt(token, &config.jwt_secret)
+        .map_err(|e| ErrorUnauthorized(format!("Invalid token: {}", e)))?;
 
     Ok(token_data.claims)
 }
