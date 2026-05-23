@@ -14,6 +14,7 @@ use actix::Actor;
 use config::AppConfig;
 use routes::health::HealthResponse;
 use routes::auth::{LoginRequest, LoginResponse, LoginUser};
+use routes::admin::{CreateTenantRequest, TenantResponse, CreateTenantUserRequest, AdminUserResponse};
 use routes::chat::{
     ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages,
     SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
@@ -24,6 +25,8 @@ use routes::chat::{
     paths(
         routes::health::health_check,
         routes::auth::login,
+        routes::admin::create_tenant,
+        routes::admin::create_tenant_user,
         routes::chat::list_conversations,
         routes::chat::get_messages_by_phone,
         routes::chat::search_messages,
@@ -33,6 +36,7 @@ use routes::chat::{
     ),
     components(schemas(
         HealthResponse, LoginRequest, LoginResponse, LoginUser,
+        CreateTenantRequest, TenantResponse, CreateTenantUserRequest, AdminUserResponse,
         ConversationResponse, MessageResponse,
         PaginatedConversations, PaginatedMessages,
         SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
@@ -40,6 +44,7 @@ use routes::chat::{
     tags(
         (name = "Health", description = "Health check endpoints"),
         (name = "Auth", description = "Authentication endpoints"),
+        (name = "Admin", description = "Tenant and user administration endpoints"),
         (name = "Chat", description = "WhatsApp chat endpoints"),
     ),
     info(title = "CRM Bro API", version = "0.1.0")
