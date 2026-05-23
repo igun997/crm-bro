@@ -6,6 +6,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Serialize, Message)]
 #[rtype(result = "()")]
 pub struct ChatMessage {
+    pub tenant_id: i32,
     pub conversation_id: i32,
     pub message_id: i32,
     pub direction: String,
@@ -22,6 +23,7 @@ pub struct ChatMessage {
 pub struct Connect {
     pub addr: Recipient<ChatMessage>,
     pub id: usize,
+    pub tenant_id: i32,
     /// None = global updates, Some(id) = specific conversation
     pub conversation_id: Option<i32>,
 }
@@ -31,14 +33,16 @@ pub struct Connect {
 #[rtype(result = "()")]
 pub struct Disconnect {
     pub id: usize,
+    pub tenant_id: i32,
+    pub conversation_id: Option<i32>,
 }
 
 /// Chat hub - manages connected WebSocket sessions
 pub struct ChatHub {
-    /// Global listeners (all messages)
-    global_sessions: HashMap<usize, Recipient<ChatMessage>>,
-    /// Per-conversation listeners
-    conversation_sessions: HashMap<i32, HashMap<usize, Recipient<ChatMessage>>>,
+    /// Global listeners per tenant
+    global_sessions: HashMap<i32, HashMap<usize, Recipient<ChatMessage>>>,
+    /// Per-tenant, per-conversation listeners
+    conversation_sessions: HashMap<i32, HashMap<i32, HashMap<usize, Recipient<ChatMessage>>>>,
 }
 
 impl ChatHub {
@@ -60,15 +64,29 @@ impl Handler<Connect> for ChatHub {
     fn handle(&mut self, msg: Connect, _: &mut Context<Self>) {
         match msg.conversation_id {
             None => {
-                self.global_sessions.insert(msg.id, msg.addr);
-                tracing::info!("WS global client connected: {}", msg.id);
+                self.global_sessions
+                    .entry(msg.tenant_id)
+                    .or_insert_with(HashMap::new)
+                    .insert(msg.id, msg.addr);
+                tracing::info!(
+                    "WS global client {} connected to tenant {}",
+                    msg.id,
+                    msg.tenant_id
+                );
             }
             Some(conv_id) => {
                 self.conversation_sessions
+                    .entry(msg.tenant_id)
+                    .or_insert_with(HashMap::new)
                     .entry(conv_id)
                     .or_insert_with(HashMap::new)
                     .insert(msg.id, msg.addr);
-                tracing::info!("WS client {} connected to conversation {}", msg.id, conv_id);
+                tracing::info!(
+                    "WS client {} connected to tenant {} conversation {}",
+                    msg.id,
+                    msg.tenant_id,
+                    conv_id
+                );
             }
         }
     }
@@ -78,10 +96,19 @@ impl Handler<Disconnect> for ChatHub {
     type Result = ();
 
     fn handle(&mut self, msg: Disconnect, _: &mut Context<Self>) {
-        self.global_sessions.remove(&msg.id);
-        // Remove from all conversation sessions
-        for sessions in self.conversation_sessions.values_mut() {
-            sessions.remove(&msg.id);
+        match msg.conversation_id {
+            None => {
+                if let Some(sessions) = self.global_sessions.get_mut(&msg.tenant_id) {
+                    sessions.remove(&msg.id);
+                }
+            }
+            Some(conversation_id) => {
+                if let Some(tenant_sessions) = self.conversation_sessions.get_mut(&msg.tenant_id) {
+                    if let Some(sessions) = tenant_sessions.get_mut(&conversation_id) {
+                        sessions.remove(&msg.id);
+                    }
+                }
+            }
         }
         tracing::info!("WS client disconnected: {}", msg.id);
     }
@@ -91,16 +118,40 @@ impl Handler<ChatMessage> for ChatHub {
     type Result = ();
 
     fn handle(&mut self, msg: ChatMessage, _: &mut Context<Self>) {
-        // Broadcast to global listeners
-        for addr in self.global_sessions.values() {
-            let _ = addr.do_send(msg.clone());
-        }
-
-        // Broadcast to conversation-specific listeners
-        if let Some(sessions) = self.conversation_sessions.get(&msg.conversation_id) {
+        if let Some(sessions) = self.global_sessions.get(&msg.tenant_id) {
             for addr in sessions.values() {
-                let _ = addr.do_send(msg.clone());
+                addr.do_send(msg.clone());
             }
         }
+
+        if let Some(tenant_sessions) = self.conversation_sessions.get(&msg.tenant_id) {
+            if let Some(sessions) = tenant_sessions.get(&msg.conversation_id) {
+                for addr in sessions.values() {
+                    addr.do_send(msg.clone());
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chat_message_carries_tenant_id_for_scoped_broadcasts() {
+        let msg = ChatMessage {
+            tenant_id: 7,
+            conversation_id: 9,
+            message_id: 11,
+            direction: "inbound".into(),
+            msg_type: "text".into(),
+            body: Some("hello".into()),
+            contact_phone: "628".into(),
+            contact_name: None,
+            timestamp: "2026-05-23 00:00:00".into(),
+        };
+
+        assert_eq!(msg.tenant_id, 7);
     }
 }

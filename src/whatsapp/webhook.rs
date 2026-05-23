@@ -52,7 +52,9 @@ pub async fn receive(
             let account = match resolve_whatsapp_account(db.get_ref(), change).await {
                 Ok(Some(account)) => account,
                 Ok(None) => {
-                    tracing::warn!("Webhook change has no active tenant WhatsApp account; skipping");
+                    tracing::warn!(
+                        "Webhook change has no active tenant WhatsApp account; skipping"
+                    );
                     continue;
                 }
                 Err(error) => {
@@ -150,7 +152,16 @@ async fn handle_inbound_message(
         .map_err(|error| format!("DB insert message: {error}"))?;
 
     let inserted = if let Some(media_info) = media_meta {
-        match store_message_media(db, storage, account, &contact, inserted.clone(), &media_info).await {
+        match store_message_media(
+            db,
+            storage,
+            account,
+            &contact,
+            inserted.clone(),
+            &media_info,
+        )
+        .await
+        {
             Ok(updated) => updated,
             Err(error) => {
                 tracing::error!(%error, message_id = inserted.id, "Failed to store inbound media");
@@ -173,6 +184,7 @@ async fn handle_inbound_message(
     tracing::info!("Stored inbound message {} from {}", msg.id, phone);
 
     hub.do_send(WsChatMessage {
+        tenant_id: account.tenant_id,
         conversation_id: conv_id,
         message_id: inserted.id,
         direction: "inbound".into(),
@@ -193,12 +205,17 @@ async fn store_message_media(
     msg: message::Model,
     media_info: &MediaInfo,
 ) -> Result<message::Model, String> {
-    let downloaded = media::download_bytes(&account.api_version, &account.access_token, &media_info.id).await?;
+    let downloaded =
+        media::download_bytes(&account.api_version, &account.access_token, &media_info.id).await?;
     let ext = media::mime_to_extension(&downloaded.mime_type);
-    let filename = media_info
-        .filename
-        .clone()
-        .unwrap_or_else(|| format!("{}_{}.{}", media_info.id, chrono::Utc::now().timestamp(), ext));
+    let filename = media_info.filename.clone().unwrap_or_else(|| {
+        format!(
+            "{}_{}.{}",
+            media_info.id,
+            chrono::Utc::now().timestamp(),
+            ext
+        )
+    });
     let key = format!(
         "tenants/{}/contacts/{}/messages/{}/{}",
         account.tenant_id,
@@ -206,7 +223,9 @@ async fn store_message_media(
         msg.id,
         sanitize_filename(&filename)
     );
-    let stored = storage.put(&key, downloaded.bytes, &downloaded.mime_type).await?;
+    let stored = storage
+        .put(&key, downloaded.bytes, &downloaded.mime_type)
+        .await?;
 
     let mut update: message::ActiveModel = msg.into();
     update.storage_key = Set(Some(stored.key));
@@ -220,7 +239,10 @@ async fn store_message_media(
         .map_err(|error| format!("DB update message media: {error}"))
 }
 
-async fn handle_status_update(db: &DatabaseConnection, status: &StatusUpdate) -> Result<(), String> {
+async fn handle_status_update(
+    db: &DatabaseConnection,
+    status: &StatusUpdate,
+) -> Result<(), String> {
     let existing = message::Entity::find()
         .filter(message::Column::WaMessageId.eq(&status.id))
         .one(db)
@@ -254,7 +276,12 @@ async fn upsert_contact(
         .map_err(|error| format!("DB query contact: {error}"))?;
 
     if let Some(contact) = existing {
-        if contact.name.as_ref().is_none_or(|existing| existing.trim().is_empty()) && name.is_some() {
+        if contact
+            .name
+            .as_ref()
+            .is_none_or(|existing| existing.trim().is_empty())
+            && name.is_some()
+        {
             let mut update: contact::ActiveModel = contact.into();
             update.name = Set(name.clone());
             return update
@@ -312,7 +339,12 @@ fn contact_name_for_message(change: &Change, msg: &InboundMessage) -> Option<Str
         .value
         .contacts
         .as_ref()
-        .and_then(|contacts| contacts.iter().find(|contact| contact.wa_id == msg.from).or_else(|| contacts.first()))
+        .and_then(|contacts| {
+            contacts
+                .iter()
+                .find(|contact| contact.wa_id == msg.from)
+                .or_else(|| contacts.first())
+        })
         .and_then(|contact| contact.profile.as_ref())
         .map(|profile| profile.name.clone())
 }
@@ -346,7 +378,10 @@ fn extract_body_and_media(msg: &InboundMessage) -> (Option<String>, Option<Media
 }
 
 fn media_body(media: Option<&MediaInfo>) -> (Option<String>, Option<MediaInfo>) {
-    (media.and_then(|media| media.caption.clone()), media.cloned())
+    (
+        media.and_then(|media| media.caption.clone()),
+        media.cloned(),
+    )
 }
 
 fn original_filename(media: &MediaInfo) -> Option<String> {
@@ -373,12 +408,20 @@ trait IfEmpty {
 
 impl IfEmpty for String {
     fn if_empty(self, fallback: &str) -> String {
-        if self.is_empty() { fallback.to_string() } else { self }
+        if self.is_empty() {
+            fallback.to_string()
+        } else {
+            self
+        }
     }
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
-    cfg.service(web::scope("/webhook/whatsapp").service(verify).service(receive));
+    cfg.service(
+        web::scope("/webhook/whatsapp")
+            .service(verify)
+            .service(receive),
+    );
 }
 
 #[cfg(test)]
@@ -409,10 +452,14 @@ mod tests {
                     "text": {"body": "hi"}
                 }]
             }
-        })).unwrap();
+        }))
+        .unwrap();
         let msg = change.value.messages.as_ref().unwrap().first().unwrap();
 
         assert_eq!(contact_phone_for_message(&change, msg), "222");
-        assert_eq!(contact_name_for_message(&change, msg), Some("Right".to_string()));
+        assert_eq!(
+            contact_name_for_message(&change, msg),
+            Some("Right".to_string())
+        );
     }
 }

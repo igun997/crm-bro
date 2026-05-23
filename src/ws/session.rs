@@ -1,5 +1,6 @@
 use actix::prelude::*;
 use actix_web_actors::ws;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use super::hub::{ChatHub, ChatMessage, Connect, Disconnect};
@@ -7,27 +8,26 @@ use super::hub::{ChatHub, ChatMessage, Connect, Disconnect};
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
 
-static mut NEXT_ID: usize = 0;
+static NEXT_ID: AtomicUsize = AtomicUsize::new(1);
 
 fn next_id() -> usize {
-    unsafe {
-        NEXT_ID += 1;
-        NEXT_ID
-    }
+    NEXT_ID.fetch_add(1, Ordering::Relaxed)
 }
 
 pub struct ChatSession {
     pub id: usize,
     pub hub: Addr<ChatHub>,
+    pub tenant_id: i32,
     pub conversation_id: Option<i32>,
     pub hb: Instant,
 }
 
 impl ChatSession {
-    pub fn new(hub: Addr<ChatHub>, conversation_id: Option<i32>) -> Self {
+    pub fn new(hub: Addr<ChatHub>, tenant_id: i32, conversation_id: Option<i32>) -> Self {
         Self {
             id: next_id(),
             hub,
+            tenant_id,
             conversation_id,
             hb: Instant::now(),
         }
@@ -37,7 +37,11 @@ impl ChatSession {
         ctx.run_interval(HEARTBEAT_INTERVAL, |act, ctx| {
             if Instant::now().duration_since(act.hb) > CLIENT_TIMEOUT {
                 tracing::warn!("WS heartbeat timeout, disconnecting {}", act.id);
-                act.hub.do_send(Disconnect { id: act.id });
+                act.hub.do_send(Disconnect {
+                    id: act.id,
+                    tenant_id: act.tenant_id,
+                    conversation_id: act.conversation_id,
+                });
                 ctx.stop();
                 return;
             }
@@ -56,12 +60,17 @@ impl Actor for ChatSession {
         self.hub.do_send(Connect {
             addr: addr.recipient(),
             id: self.id,
+            tenant_id: self.tenant_id,
             conversation_id: self.conversation_id,
         });
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        self.hub.do_send(Disconnect { id: self.id });
+        self.hub.do_send(Disconnect {
+            id: self.id,
+            tenant_id: self.tenant_id,
+            conversation_id: self.conversation_id,
+        });
         Running::Stop
     }
 }
