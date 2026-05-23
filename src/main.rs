@@ -3,22 +3,30 @@ use crm_bro::routes;
 use crm_bro::whatsapp;
 use crm_bro::ws;
 
+use actix::Actor;
 use actix_cors::Cors;
-use actix_web::{web, App, HttpServer, middleware::Logger};
 use actix_files as afiles;
+use actix_web::{middleware::Logger, web, App, HttpServer};
 use sea_orm::Database;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use actix::Actor;
 
 use config::AppConfig;
-use routes::health::HealthResponse;
+use routes::admin::{
+    AdminUserResponse, CreateTenantRequest, CreateTenantUserRequest, TenantResponse,
+};
 use routes::auth::{LoginRequest, LoginResponse, LoginUser};
-use routes::admin::{CreateTenantRequest, TenantResponse, CreateTenantUserRequest, AdminUserResponse};
-use routes::settings::{WhatsAppAccountResponse, UpsertWhatsAppAccountRequest, PatchWhatsAppAccountRequest};
 use routes::chat::{
     ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages,
-    SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
+    SendMediaBody, SendResponse, SendTemplateBody, SendTextBody,
+};
+use routes::contacts::{
+    AttachTagRequest, ContactResponse, CreateTagRequest, PaginatedContacts, PatchContactRequest,
+    TagResponse,
+};
+use routes::health::HealthResponse;
+use routes::settings::{
+    PatchWhatsAppAccountRequest, UpsertWhatsAppAccountRequest, WhatsAppAccountResponse,
 };
 
 #[derive(OpenApi)]
@@ -31,6 +39,13 @@ use routes::chat::{
         routes::settings::list_whatsapp_accounts,
         routes::settings::create_whatsapp_account,
         routes::settings::update_whatsapp_account,
+        routes::contacts::list_contacts,
+        routes::contacts::get_contact,
+        routes::contacts::update_contact,
+        routes::contacts::attach_tag,
+        routes::contacts::detach_tag,
+        routes::contacts::list_tags,
+        routes::contacts::create_tag,
         routes::chat::list_conversations,
         routes::chat::get_messages_by_phone,
         routes::chat::search_messages,
@@ -42,6 +57,8 @@ use routes::chat::{
         HealthResponse, LoginRequest, LoginResponse, LoginUser,
         CreateTenantRequest, TenantResponse, CreateTenantUserRequest, AdminUserResponse,
         WhatsAppAccountResponse, UpsertWhatsAppAccountRequest, PatchWhatsAppAccountRequest,
+        ContactResponse, TagResponse, PaginatedContacts, PatchContactRequest, CreateTagRequest,
+        AttachTagRequest,
         ConversationResponse, MessageResponse,
         PaginatedConversations, PaginatedMessages,
         SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
@@ -51,6 +68,7 @@ use routes::chat::{
         (name = "Auth", description = "Authentication endpoints"),
         (name = "Admin", description = "Tenant and user administration endpoints"),
         (name = "Settings", description = "Tenant settings endpoints"),
+        (name = "Contacts", description = "Tenant contacts and tags endpoints"),
         (name = "Chat", description = "WhatsApp chat endpoints"),
     ),
     info(title = "CRM Bro API", version = "0.1.0")
@@ -69,7 +87,11 @@ async fn main() -> std::io::Result<()> {
         .expect("Failed to connect to database");
 
     tracing::info!("Connected to database");
-    tracing::info!("Starting server at {}:{}", config.server_host, config.server_port);
+    tracing::info!(
+        "Starting server at {}:{}",
+        config.server_host,
+        config.server_port
+    );
 
     let host = config.server_host.clone();
     let port = config.server_port;

@@ -1,8 +1,9 @@
-pub mod health;
-pub mod auth;
 pub mod admin;
-pub mod settings;
+pub mod auth;
 pub mod chat;
+pub mod contacts;
+pub mod health;
+pub mod settings;
 
 use actix_web::web;
 
@@ -13,6 +14,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .configure(auth::configure)
             .configure(admin::configure)
             .configure(settings::configure)
+            .configure(contacts::configure)
             .configure(chat::configure),
     );
 }
