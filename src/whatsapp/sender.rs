@@ -24,6 +24,18 @@ impl WhatsAppSender {
         }
     }
 
+    pub fn from_parts(api_version: &str, phone_number_id: &str, access_token: &str) -> Self {
+        let base_url = format!(
+            "https://graph.facebook.com/{}/{}/messages",
+            api_version, phone_number_id
+        );
+        Self {
+            client: Client::new(),
+            base_url,
+            access_token: access_token.to_string(),
+        }
+    }
+
     pub async fn send_text(&self, to: &str, body: &str) -> Result<String, String> {
         let payload = SendTextRequest {
             messaging_product: "whatsapp".into(),

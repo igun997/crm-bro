@@ -1,4 +1,4 @@
-.PHONY: run build check test clean fmt lint dev db-check migrate static seed-admin
+.PHONY: run build check test clean fmt lint dev db-check migrate static seed-admin worker dev-worker
 
 run:
 	RUST_LOG=debug cargo run --bin crm-bro
@@ -45,3 +45,9 @@ static:
 
 seed-admin:
 	cargo run --bin seed_admin -- --email "$(EMAIL)" --password-env "$${PASSWORD_ENV:-ADMIN_PASSWORD}" --name "$(NAME)"
+
+worker:
+	RUST_LOG=debug cargo run --bin worker
+
+dev-worker:
+	RUST_LOG=debug cargo watch -i media/ -x 'run --bin worker'
