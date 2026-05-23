@@ -1,9 +1,8 @@
 use actix_web::{web, HttpResponse, post};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use jsonwebtoken::{encode, Header, EncodingKey};
-use chrono::{Utc, Duration};
 
+use crate::auth::jwt::{build_claims, encode_jwt};
 use crate::config::AppConfig;
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -16,14 +15,7 @@ pub struct LoginRequest {
 pub struct LoginResponse {
     pub token: String,
     pub token_type: String,
-    pub expires_in: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Claims {
-    pub sub: String,
-    pub exp: usize,
-    pub iat: usize,
+    pub expires_in: u64,
 }
 
 /// Login - returns JWT token
@@ -42,7 +34,7 @@ pub async fn login(
     body: web::Json<LoginRequest>,
     config: web::Data<AppConfig>,
 ) -> HttpResponse {
-    // TODO: validate against DB users table
+    // TODO: validate against DB users table (Task 5)
     // Placeholder: accept test@test.com / password
     if body.email != "test@test.com" || body.password != "password" {
         return HttpResponse::Unauthorized().json(serde_json::json!({
@@ -50,20 +42,12 @@ pub async fn login(
         }));
     }
 
-    let now = Utc::now();
-    let expires_in = 3600i64; // 1 hour
-    let claims = Claims {
-        sub: body.email.clone(),
-        iat: now.timestamp() as usize,
-        exp: (now + Duration::seconds(expires_in)).timestamp() as usize,
-    };
+    let expires_in: u64 = 3600;
+    // Placeholder user id 1 until Task 5 wires up real DB lookup
+    let claims = build_claims(1, None, false, expires_in);
 
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(config.jwt_secret.as_bytes()),
-    )
-    .expect("JWT encoding failed");
+    let token = encode_jwt(&claims, &config.jwt_secret)
+        .expect("JWT encoding failed");
 
     HttpResponse::Ok().json(LoginResponse {
         token,

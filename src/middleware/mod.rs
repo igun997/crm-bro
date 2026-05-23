@@ -2,7 +2,7 @@ use actix_web::{dev::ServiceRequest, Error};
 use actix_web::error::ErrorUnauthorized;
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
 
-use crate::routes::auth::Claims;
+use crate::auth::jwt::Claims;
 
 #[allow(dead_code)]
 pub async fn validate_token(req: &ServiceRequest, token: &str) -> Result<Claims, Error> {
