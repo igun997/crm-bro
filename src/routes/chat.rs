@@ -1,16 +1,20 @@
-use actix_web::{web, HttpResponse, get, post};
 use actix_multipart::Multipart;
+use actix_web::{get, post, web, HttpResponse};
+use bytes::Bytes;
 use futures_util::StreamExt;
 use sea_orm::{
-    DatabaseConnection, EntityTrait, QueryFilter, ColumnTrait,
-    QueryOrder, PaginatorTrait, QuerySelect, Condition, Set, ActiveModelTrait,
+    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use serde::{Deserialize, Serialize};
-use utoipa::{ToSchema, IntoParams};
+use utoipa::{IntoParams, ToSchema};
 
-use crate::config::AppConfig;
-use crate::models::{conversation, message};
-use crate::whatsapp::sender::WhatsAppSender;
+use crate::auth::extractor::CurrentUser;
+use crate::models::{contact, conversation, message, outbox_message, tenant_whatsapp_account};
+use crate::rbac::require_permission;
+use crate::storage::StorageService;
+
+const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 
 // === Request/Response types ===
 
@@ -70,7 +74,7 @@ pub struct SendMediaBody {
     pub to: String,
     /// Media type: image, document, audio, video
     pub media_type: String,
-    /// Public URL of the media
+    /// Public URL or storage URL of media
     pub url: String,
     /// Optional caption
     pub caption: Option<String>,
@@ -121,6 +125,9 @@ pub struct PaginatedMessages {
 #[derive(Debug, Serialize, ToSchema)]
 pub struct SendResponse {
     pub success: bool,
+    pub message_id: Option<i32>,
+    pub outbox_id: Option<i32>,
+    pub status: Option<String>,
     pub wa_message_id: Option<String>,
     pub error: Option<String>,
 }
@@ -139,13 +146,23 @@ pub struct SendResponse {
 )]
 #[get("/conversations")]
 pub async fn list_conversations(
+    current: CurrentUser,
     db: web::Data<DatabaseConnection>,
     query: web::Query<ListConversationsQuery>,
 ) -> HttpResponse {
+    let ctx = current.0;
+    if let Err(response) = require_permission(&ctx, "chats.read") {
+        return response;
+    }
+    let tenant_id = match require_tenant(&ctx) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response,
+    };
+
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).min(100);
 
-    let mut condition = Condition::all();
+    let mut condition = Condition::all().add(conversation::Column::TenantId.eq(tenant_id));
     if let Some(ref phone) = query.phone {
         condition = condition.add(conversation::Column::ContactPhone.contains(phone));
     }
@@ -168,13 +185,7 @@ pub async fn list_conversations(
         .await
         .unwrap_or_default();
 
-    let data: Vec<ConversationResponse> = conversations.into_iter().map(|c| ConversationResponse {
-        id: c.id,
-        contact_phone: c.contact_phone,
-        contact_name: c.contact_name,
-        last_message_at: c.last_message_at.map(|d| d.to_string()),
-        created_at: c.created_at.to_string(),
-    }).collect();
+    let data = conversations.into_iter().map(conversation_response).collect();
 
     HttpResponse::Ok().json(PaginatedConversations {
         success: true,
@@ -201,11 +212,22 @@ pub async fn list_conversations(
 )]
 #[get("/messages/{phone}")]
 pub async fn get_messages_by_phone(
+    current: CurrentUser,
     db: web::Data<DatabaseConnection>,
     phone: web::Path<String>,
     query: web::Query<ListMessagesQuery>,
 ) -> HttpResponse {
+    let ctx = current.0;
+    if let Err(response) = require_permission(&ctx, "chats.read") {
+        return response;
+    }
+    let tenant_id = match require_tenant(&ctx) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response,
+    };
+
     let conv = conversation::Entity::find()
+        .filter(conversation::Column::TenantId.eq(tenant_id))
         .filter(conversation::Column::ContactPhone.eq(phone.as_str()))
         .one(db.get_ref())
         .await
@@ -213,22 +235,28 @@ pub async fn get_messages_by_phone(
 
     let conv = match conv {
         Some(c) => c,
-        None => return HttpResponse::NotFound().json(serde_json::json!({
-            "success": false, "error": "Conversation not found"
-        })),
+        None => {
+            return HttpResponse::NotFound().json(serde_json::json!({
+                "success": false, "error": "Conversation not found"
+            }));
+        }
     };
 
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(50).min(100);
 
+    let condition = Condition::all()
+        .add(message::Column::TenantId.eq(tenant_id))
+        .add(message::Column::ConversationId.eq(conv.id));
+
     let total = message::Entity::find()
-        .filter(message::Column::ConversationId.eq(conv.id))
+        .filter(condition.clone())
         .count(db.get_ref())
         .await
         .unwrap_or(0);
 
     let messages = message::Entity::find()
-        .filter(message::Column::ConversationId.eq(conv.id))
+        .filter(condition)
         .order_by_asc(message::Column::Timestamp)
         .offset((page - 1) * per_page)
         .limit(per_page)
@@ -236,23 +264,9 @@ pub async fn get_messages_by_phone(
         .await
         .unwrap_or_default();
 
-    let data: Vec<MessageResponse> = messages.into_iter().map(|m| MessageResponse {
-        id: m.id,
-        conversation_id: m.conversation_id,
-        wa_message_id: m.wa_message_id,
-        direction: m.direction,
-        msg_type: m.msg_type,
-        body: m.body,
-        media_url: m.media_url,
-        media_mime: m.media_mime,
-        template_name: m.template_name,
-        status: m.status,
-        timestamp: m.timestamp.to_string(),
-    }).collect();
-
     HttpResponse::Ok().json(PaginatedMessages {
         success: true,
-        data,
+        data: messages.into_iter().map(message_response).collect(),
         page,
         per_page,
         total,
@@ -271,18 +285,29 @@ pub async fn get_messages_by_phone(
 )]
 #[get("/search")]
 pub async fn search_messages(
+    current: CurrentUser,
     db: web::Data<DatabaseConnection>,
     query: web::Query<SearchMessagesQuery>,
 ) -> HttpResponse {
+    let ctx = current.0;
+    if let Err(response) = require_permission(&ctx, "chats.read") {
+        return response;
+    }
+    let tenant_id = match require_tenant(&ctx) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response,
+    };
+
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).min(100);
 
     let mut condition = Condition::all()
+        .add(message::Column::TenantId.eq(tenant_id))
         .add(message::Column::Body.contains(&query.q));
 
-    // If phone filter, find conversation first
     if let Some(ref phone) = query.phone {
         let conv = conversation::Entity::find()
+            .filter(conversation::Column::TenantId.eq(tenant_id))
             .filter(conversation::Column::ContactPhone.eq(phone.as_str()))
             .one(db.get_ref())
             .await
@@ -291,7 +316,11 @@ pub async fn search_messages(
             condition = condition.add(message::Column::ConversationId.eq(c.id));
         } else {
             return HttpResponse::Ok().json(PaginatedMessages {
-                success: true, data: vec![], page, per_page, total: 0,
+                success: true,
+                data: vec![],
+                page,
+                per_page,
+                total: 0,
             });
         }
     }
@@ -311,7 +340,525 @@ pub async fn search_messages(
         .await
         .unwrap_or_default();
 
-    let data: Vec<MessageResponse> = messages.into_iter().map(|m| MessageResponse {
+    HttpResponse::Ok().json(PaginatedMessages {
+        success: true,
+        data: messages.into_iter().map(message_response).collect(),
+        page,
+        per_page,
+        total,
+    })
+}
+
+/// Queue a text message
+#[utoipa::path(
+    post,
+    path = "/api/chat/send/text",
+    request_body = SendTextBody,
+    responses(
+        (status = 200, description = "Message queued", body = SendResponse),
+    ),
+    tag = "Chat"
+)]
+#[post("/send/text")]
+pub async fn send_text(
+    current: CurrentUser,
+    db: web::Data<DatabaseConnection>,
+    body: web::Json<SendTextBody>,
+) -> HttpResponse {
+    queue_send(
+        current,
+        db.get_ref(),
+        &body.to,
+        "text",
+        Some(body.message.clone()),
+        None,
+        None,
+        serde_json::json!({"type":"text","to":body.to,"message":body.message}),
+    )
+    .await
+}
+
+/// Queue a template message
+#[utoipa::path(
+    post,
+    path = "/api/chat/send/template",
+    request_body = SendTemplateBody,
+    responses(
+        (status = 200, description = "Template queued", body = SendResponse),
+    ),
+    tag = "Chat"
+)]
+#[post("/send/template")]
+pub async fn send_template(
+    current: CurrentUser,
+    db: web::Data<DatabaseConnection>,
+    body: web::Json<SendTemplateBody>,
+) -> HttpResponse {
+    queue_send(
+        current,
+        db.get_ref(),
+        &body.to,
+        "template",
+        None,
+        Some(body.template_name.clone()),
+        None,
+        serde_json::json!({"type":"template","to":body.to,"template_name":body.template_name,"language":body.language}),
+    )
+    .await
+}
+
+/// Queue a media message (image/document/audio/video)
+#[utoipa::path(
+    post,
+    path = "/api/chat/send/media",
+    request_body = SendMediaBody,
+    responses(
+        (status = 200, description = "Media queued", body = SendResponse),
+    ),
+    tag = "Chat"
+)]
+#[post("/send/media")]
+pub async fn send_media(
+    current: CurrentUser,
+    db: web::Data<DatabaseConnection>,
+    body: web::Json<SendMediaBody>,
+) -> HttpResponse {
+    queue_send(
+        current,
+        db.get_ref(),
+        &body.to,
+        &body.media_type,
+        body.caption.clone(),
+        None,
+        Some(body.url.clone()),
+        serde_json::json!({"type":"media","to":body.to,"media_type":body.media_type,"url":body.url,"caption":body.caption}),
+    )
+    .await
+}
+
+/// Upload and queue a file via WhatsApp
+#[post("/send/upload")]
+pub async fn send_upload(
+    current: CurrentUser,
+    db: web::Data<DatabaseConnection>,
+    storage: web::Data<StorageService>,
+    mut payload: Multipart,
+) -> HttpResponse {
+    let ctx = current.0;
+    if let Err(response) = require_permission(&ctx, "chats.send") {
+        return response;
+    }
+    let tenant_id = match require_tenant(&ctx) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response,
+    };
+
+    let mut phone: Option<String> = None;
+    let mut caption: Option<String> = None;
+    let mut file_bytes: Option<Vec<u8>> = None;
+    let mut filename = "upload".to_string();
+    let mut mime_type = "application/octet-stream".to_string();
+    let mut media_type = "document".to_string();
+
+    while let Some(field_result) = payload.next().await {
+        let mut field = match field_result {
+            Ok(field) => field,
+            Err(error) => {
+                return send_error(
+                    actix_web::http::StatusCode::BAD_REQUEST,
+                    &format!("Invalid multipart field: {error}"),
+                );
+            }
+        };
+        let name = field.name().map(|n| n.to_string()).unwrap_or_default();
+        match name.as_str() {
+            "to" => match read_text_field(&mut field).await {
+                Ok(value) => phone = Some(value),
+                Err(error) => return send_error(actix_web::http::StatusCode::BAD_REQUEST, &error),
+            },
+            "caption" => {
+                let value = match read_text_field(&mut field).await {
+                    Ok(value) => value,
+                    Err(error) => return send_error(actix_web::http::StatusCode::BAD_REQUEST, &error),
+                };
+                if !value.is_empty() {
+                    caption = Some(value);
+                }
+            }
+            "file" => {
+                if let Some(ct) = field.content_type() {
+                    mime_type = ct.to_string();
+                }
+                media_type = media_type_from_mime(&mime_type).to_string();
+                filename = field
+                    .content_disposition()
+                    .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
+                    .unwrap_or_else(|| "upload".to_string());
+                let mut data = Vec::new();
+                while let Some(chunk_result) = field.next().await {
+                    let chunk = match chunk_result {
+                        Ok(chunk) => chunk,
+                        Err(error) => {
+                            return send_error(
+                                actix_web::http::StatusCode::BAD_REQUEST,
+                                &format!("Read upload: {error}"),
+                            );
+                        }
+                    };
+                    if data.len() + chunk.len() > MAX_UPLOAD_BYTES {
+                        return send_error(actix_web::http::StatusCode::PAYLOAD_TOO_LARGE, "Upload too large");
+                    }
+                    data.extend_from_slice(&chunk);
+                }
+                file_bytes = Some(data);
+            }
+            _ => {}
+        }
+    }
+
+    let phone = match phone {
+        Some(p) if !p.trim().is_empty() => p,
+        _ => return send_error(actix_web::http::StatusCode::BAD_REQUEST, "Missing 'to' field"),
+    };
+    let file_bytes = match file_bytes {
+        Some(bytes) => bytes,
+        None => return send_error(actix_web::http::StatusCode::BAD_REQUEST, "Missing 'file' field"),
+    };
+
+    let account_id = match active_whatsapp_account_id(db.get_ref(), tenant_id).await {
+        Ok(account_id) => account_id,
+        Err(error) => return send_error(actix_web::http::StatusCode::BAD_REQUEST, &error),
+    };
+
+    let (contact, conv) = match ensure_contact_conversation(db.get_ref(), tenant_id, &phone).await {
+        Ok(pair) => pair,
+        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+    };
+
+    let now = chrono::Utc::now().naive_utc();
+    let msg = match create_queued_message(
+        db.get_ref(),
+        tenant_id,
+        contact.id,
+        conv.id,
+        &media_type,
+        caption.clone(),
+        None,
+        None,
+        None,
+        Some(filename.clone()),
+        Some(file_bytes.len() as i64),
+        now,
+    )
+    .await
+    {
+        Ok(msg) => msg,
+        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+    };
+
+    let key = format!(
+        "tenants/{tenant_id}/contacts/{}/messages/{}/{}",
+        contact.id,
+        msg.id,
+        sanitize_filename(&filename)
+    );
+    let stored = match storage.put(&key, Bytes::from(file_bytes), &mime_type).await {
+        Ok(stored) => stored,
+        Err(error) => {
+            cleanup_message(db.get_ref(), msg.id).await;
+            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error);
+        }
+    };
+
+    let msg_id = msg.id;
+    let mut msg_update: message::ActiveModel = msg.into();
+    msg_update.storage_key = Set(Some(stored.key.clone()));
+    msg_update.media_url = Set(Some(stored.url.clone()));
+    msg_update.media_mime = Set(Some(mime_type.clone()));
+    let msg = match msg_update.update(db.get_ref()).await {
+        Ok(msg) => msg,
+        Err(error) => {
+            cleanup_message(db.get_ref(), msg_id).await;
+            return send_error(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                &format!("DB update uploaded message: {error}"),
+            );
+        }
+    };
+
+    let outbox = match create_outbox(
+        db.get_ref(),
+        tenant_id,
+        msg.id,
+        "send_media",
+        serde_json::json!({
+            "type":"media",
+            "to":phone,
+            "media_type":media_type,
+            "storage_key":stored.key,
+            "url":stored.url,
+            "caption":caption,
+            "mime_type":mime_type,
+            "filename":filename,
+            "whatsapp_account_id":account_id,
+        }),
+    )
+    .await
+    {
+        Ok(outbox) => outbox,
+        Err(error) => {
+            cleanup_message(db.get_ref(), msg.id).await;
+            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error);
+        }
+    };
+
+    HttpResponse::Ok().json(SendResponse {
+        success: true,
+        message_id: Some(msg.id),
+        outbox_id: Some(outbox.id),
+        status: Some("queued".to_string()),
+        wa_message_id: None,
+        error: None,
+    })
+}
+
+async fn queue_send(
+    current: CurrentUser,
+    db: &DatabaseConnection,
+    phone: &str,
+    msg_type: &str,
+    body: Option<String>,
+    template_name: Option<String>,
+    media_url: Option<String>,
+    mut payload: serde_json::Value,
+) -> HttpResponse {
+    let ctx = current.0;
+    if let Err(response) = require_permission(&ctx, "chats.send") {
+        return response;
+    }
+    let tenant_id = match require_tenant(&ctx) {
+        Ok(tenant_id) => tenant_id,
+        Err(response) => return response,
+    };
+
+    let account_id = match active_whatsapp_account_id(db, tenant_id).await {
+        Ok(account_id) => account_id,
+        Err(error) => return send_error(actix_web::http::StatusCode::BAD_REQUEST, &error),
+    };
+    let (contact, conv) = match ensure_contact_conversation(db, tenant_id, phone).await {
+        Ok(pair) => pair,
+        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+    };
+    payload["whatsapp_account_id"] = serde_json::json!(account_id);
+
+    let now = chrono::Utc::now().naive_utc();
+    let msg = match create_queued_message(
+        db,
+        tenant_id,
+        contact.id,
+        conv.id,
+        msg_type,
+        body,
+        template_name,
+        media_url,
+        None,
+        None,
+        None,
+        now,
+    )
+    .await
+    {
+        Ok(msg) => msg,
+        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+    };
+
+    let kind = if msg_type == "template" {
+        "send_template"
+    } else if msg_type == "text" {
+        "send_text"
+    } else {
+        "send_media"
+    };
+    let outbox = match create_outbox(db, tenant_id, msg.id, kind, payload).await {
+        Ok(outbox) => outbox,
+        Err(error) => {
+            cleanup_message(db, msg.id).await;
+            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error);
+        }
+    };
+
+    HttpResponse::Ok().json(SendResponse {
+        success: true,
+        message_id: Some(msg.id),
+        outbox_id: Some(outbox.id),
+        status: Some("queued".to_string()),
+        wa_message_id: None,
+        error: None,
+    })
+}
+
+async fn ensure_contact_conversation(
+    db: &DatabaseConnection,
+    tenant_id: i32,
+    phone: &str,
+) -> Result<(contact::Model, conversation::Model), String> {
+    let contact = match contact::Entity::find()
+        .filter(contact::Column::TenantId.eq(tenant_id))
+        .filter(contact::Column::Phone.eq(phone))
+        .one(db)
+        .await
+        .map_err(|error| format!("DB query contact: {error}"))?
+    {
+        Some(contact) => contact,
+        None => contact::ActiveModel {
+            tenant_id: Set(tenant_id),
+            phone: Set(phone.to_string()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(|error| format!("DB insert contact: {error}"))?,
+    };
+
+    let conv = match conversation::Entity::find()
+        .filter(conversation::Column::TenantId.eq(tenant_id))
+        .filter(conversation::Column::ContactId.eq(contact.id))
+        .one(db)
+        .await
+        .map_err(|error| format!("DB query conversation: {error}"))?
+    {
+        Some(conv) => conv,
+        None => conversation::ActiveModel {
+            tenant_id: Set(Some(tenant_id)),
+            contact_id: Set(Some(contact.id)),
+            contact_phone: Set(phone.to_string()),
+            contact_name: Set(contact.name.clone()),
+            ..Default::default()
+        }
+        .insert(db)
+        .await
+        .map_err(|error| format!("DB insert conversation: {error}"))?,
+    };
+
+    Ok((contact, conv))
+}
+
+async fn cleanup_message(db: &DatabaseConnection, message_id: i32) {
+    if let Err(error) = message::Entity::delete_by_id(message_id).exec(db).await {
+        tracing::error!(%error, message_id, "Failed to clean up queued message");
+    }
+}
+
+async fn active_whatsapp_account_id(db: &DatabaseConnection, tenant_id: i32) -> Result<i32, String> {
+    tenant_whatsapp_account::Entity::find()
+        .filter(tenant_whatsapp_account::Column::TenantId.eq(tenant_id))
+        .filter(tenant_whatsapp_account::Column::IsActive.eq(true))
+        .one(db)
+        .await
+        .map_err(|error| format!("DB query WhatsApp account: {error}"))?
+        .map(|account| account.id)
+        .ok_or_else(|| "No active WhatsApp account configured".to_string())
+}
+
+async fn create_queued_message(
+    db: &DatabaseConnection,
+    tenant_id: i32,
+    contact_id: i32,
+    conversation_id: i32,
+    msg_type: &str,
+    body: Option<String>,
+    template_name: Option<String>,
+    media_url: Option<String>,
+    storage_key: Option<String>,
+    original_filename: Option<String>,
+    size_bytes: Option<i64>,
+    now: chrono::NaiveDateTime,
+) -> Result<message::Model, String> {
+    let msg = message::ActiveModel {
+        conversation_id: Set(conversation_id),
+        wa_message_id: Set(None),
+        direction: Set("outbound".to_string()),
+        msg_type: Set(msg_type.to_string()),
+        body: Set(body),
+        media_url: Set(media_url),
+        media_mime: Set(None),
+        template_name: Set(template_name),
+        status: Set("queued".to_string()),
+        timestamp: Set(now),
+        tenant_id: Set(Some(tenant_id)),
+        contact_id: Set(Some(contact_id)),
+        storage_key: Set(storage_key),
+        original_filename: Set(original_filename),
+        size_bytes: Set(size_bytes),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|error| format!("DB insert queued message: {error}"))?;
+
+    if let Ok(Some(conv)) = conversation::Entity::find_by_id(conversation_id).one(db).await {
+        let mut update: conversation::ActiveModel = conv.into();
+        update.last_message_at = Set(Some(now));
+        let _ = update.update(db).await;
+    }
+
+    Ok(msg)
+}
+
+async fn create_outbox(
+    db: &DatabaseConnection,
+    tenant_id: i32,
+    message_id: i32,
+    kind: &str,
+    payload_json: serde_json::Value,
+) -> Result<outbox_message::Model, String> {
+    outbox_message::ActiveModel {
+        tenant_id: Set(tenant_id),
+        message_id: Set(message_id),
+        kind: Set(kind.to_string()),
+        payload_json: Set(payload_json),
+        status: Set("pending".to_string()),
+        attempts: Set(0),
+        next_attempt_at: Set(chrono::Utc::now().naive_utc()),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|error| format!("DB insert outbox: {error}"))
+}
+
+fn require_tenant(ctx: &crate::auth::context::AuthContext) -> Result<i32, HttpResponse> {
+    ctx.tenant_id.ok_or_else(|| {
+        HttpResponse::Forbidden().json(serde_json::json!({
+            "success": false,
+            "error": "Tenant context required"
+        }))
+    })
+}
+
+fn send_error(status: actix_web::http::StatusCode, error: &str) -> HttpResponse {
+    HttpResponse::build(status).json(SendResponse {
+        success: false,
+        message_id: None,
+        outbox_id: None,
+        status: None,
+        wa_message_id: None,
+        error: Some(error.to_string()),
+    })
+}
+
+fn conversation_response(c: conversation::Model) -> ConversationResponse {
+    ConversationResponse {
+        id: c.id,
+        contact_phone: c.contact_phone,
+        contact_name: c.contact_name,
+        last_message_at: c.last_message_at.map(|d| d.to_string()),
+        created_at: c.created_at.to_string(),
+    }
+}
+
+fn message_response(m: message::Model) -> MessageResponse {
+    MessageResponse {
         id: m.id,
         conversation_id: m.conversation_id,
         wa_message_id: m.wa_message_id,
@@ -323,253 +870,48 @@ pub async fn search_messages(
         template_name: m.template_name,
         status: m.status,
         timestamp: m.timestamp.to_string(),
-    }).collect();
-
-    HttpResponse::Ok().json(PaginatedMessages {
-        success: true,
-        data,
-        page,
-        per_page,
-        total,
-    })
-}
-
-/// Send a text message
-#[utoipa::path(
-    post,
-    path = "/api/chat/send/text",
-    request_body = SendTextBody,
-    responses(
-        (status = 200, description = "Message sent", body = SendResponse),
-    ),
-    tag = "Chat"
-)]
-#[post("/send/text")]
-pub async fn send_text(
-    config: web::Data<AppConfig>,
-    db: web::Data<DatabaseConnection>,
-    body: web::Json<SendTextBody>,
-) -> HttpResponse {
-    let sender = WhatsAppSender::new(&config);
-    match sender.send_text(&body.to, &body.message).await {
-        Ok(id) => {
-            store_outbound_message(db.get_ref(), &body.to, "text", Some(&body.message), None, None, Some(&id)).await;
-            HttpResponse::Ok().json(SendResponse {
-                success: true, wa_message_id: Some(id), error: None,
-            })
-        },
-        Err(e) => HttpResponse::Ok().json(SendResponse {
-            success: false, wa_message_id: None, error: Some(e),
-        }),
     }
 }
 
-/// Send a template message
-#[utoipa::path(
-    post,
-    path = "/api/chat/send/template",
-    request_body = SendTemplateBody,
-    responses(
-        (status = 200, description = "Template sent", body = SendResponse),
-    ),
-    tag = "Chat"
-)]
-#[post("/send/template")]
-pub async fn send_template(
-    config: web::Data<AppConfig>,
-    db: web::Data<DatabaseConnection>,
-    body: web::Json<SendTemplateBody>,
-) -> HttpResponse {
-    let sender = WhatsAppSender::new(&config);
-    match sender.send_template(&body.to, &body.template_name, &body.language, None).await {
-        Ok(id) => {
-            store_outbound_message(db.get_ref(), &body.to, "template", None, Some(&body.template_name), None, Some(&id)).await;
-            HttpResponse::Ok().json(SendResponse {
-                success: true, wa_message_id: Some(id), error: None,
-            })
-        },
-        Err(e) => HttpResponse::Ok().json(SendResponse {
-            success: false, wa_message_id: None, error: Some(e),
-        }),
+async fn read_text_field(field: &mut actix_multipart::Field) -> Result<String, String> {
+    let mut data = Vec::new();
+    while let Some(chunk_result) = field.next().await {
+        let chunk = chunk_result.map_err(|error| format!("Read form field: {error}"))?;
+        if data.len() + chunk.len() > MAX_UPLOAD_BYTES {
+            return Err("Form field too large".to_string());
+        }
+        data.extend_from_slice(&chunk);
     }
+    Ok(String::from_utf8_lossy(&data).to_string())
 }
 
-/// Send a media message (image/document/audio/video)
-#[utoipa::path(
-    post,
-    path = "/api/chat/send/media",
-    request_body = SendMediaBody,
-    responses(
-        (status = 200, description = "Media sent", body = SendResponse),
-    ),
-    tag = "Chat"
-)]
-#[post("/send/media")]
-pub async fn send_media(
-    config: web::Data<AppConfig>,
-    db: web::Data<DatabaseConnection>,
-    body: web::Json<SendMediaBody>,
-) -> HttpResponse {
-    let sender = WhatsAppSender::new(&config);
-    match sender.send_media(&body.to, &body.media_type, &body.url, body.caption.as_deref()).await {
-        Ok(id) => {
-            store_outbound_message(db.get_ref(), &body.to, &body.media_type, body.caption.as_deref(), None, Some(&body.url), Some(&id)).await;
-            HttpResponse::Ok().json(SendResponse {
-                success: true, wa_message_id: Some(id), error: None,
-            })
-        },
-        Err(e) => HttpResponse::Ok().json(SendResponse {
-            success: false, wa_message_id: None, error: Some(e),
-        }),
-    }
-}
-
-async fn store_outbound_message(
-    db: &DatabaseConnection,
-    phone: &str,
-    msg_type: &str,
-    body: Option<&str>,
-    template_name: Option<&str>,
-    media_url: Option<&str>,
-    wa_message_id: Option<&str>,
-) {
-    let conv = conversation::Entity::find()
-        .filter(conversation::Column::ContactPhone.eq(phone))
-        .one(db)
-        .await
-        .unwrap_or(None);
-
-    let conv_id = if let Some(c) = conv {
-        c.id
+fn media_type_from_mime(mime_type: &str) -> &str {
+    if mime_type.starts_with("image") {
+        "image"
+    } else if mime_type.starts_with("video") {
+        "video"
+    } else if mime_type.starts_with("audio") {
+        "audio"
     } else {
-        let new_conv = conversation::ActiveModel {
-            contact_phone: Set(phone.into()),
-            contact_name: Set(None),
-            ..Default::default()
-        };
-        match new_conv.insert(db).await {
-            Ok(c) => c.id,
-            Err(e) => { tracing::error!("Failed to create conversation: {}", e); return; }
-        }
-    };
-
-    let now = chrono::Utc::now().naive_utc();
-
-    let new_msg = message::ActiveModel {
-        conversation_id: Set(conv_id),
-        wa_message_id: Set(wa_message_id.map(|s| s.to_string())),
-        direction: Set("outbound".into()),
-        msg_type: Set(msg_type.into()),
-        body: Set(body.map(|s| s.to_string())),
-        media_url: Set(media_url.map(|s| s.to_string())),
-        media_mime: Set(None),
-        template_name: Set(template_name.map(|s| s.to_string())),
-        status: Set("sent".into()),
-        timestamp: Set(now),
-        ..Default::default()
-    };
-
-    if let Err(e) = new_msg.insert(db).await {
-        tracing::error!("Failed to store outbound message: {}", e);
-    }
-
-    if let Ok(Some(c)) = conversation::Entity::find_by_id(conv_id).one(db).await {
-        let mut update: conversation::ActiveModel = c.into();
-        update.last_message_at = Set(Some(now));
-        let _ = update.update(db).await;
+        "document"
     }
 }
 
-/// Upload and send a file via WhatsApp
-#[post("/send/upload")]
-pub async fn send_upload(
-    config: web::Data<AppConfig>,
-    db: web::Data<DatabaseConnection>,
-    mut payload: Multipart,
-) -> HttpResponse {
-    let mut phone: Option<String> = None;
-    let mut caption: Option<String> = None;
-    let mut file_path: Option<String> = None;
-    let mut mime_type = "application/octet-stream".to_string();
-    let mut media_type = "document".to_string();
-
-    while let Some(Ok(mut field)) = payload.next().await {
-        let name = field.name().map(|n| n.to_string()).unwrap_or_default();
-        match name.as_str() {
-            "to" => {
-                let mut data = Vec::new();
-                while let Some(Ok(chunk)) = field.next().await { data.extend_from_slice(&chunk); }
-                phone = Some(String::from_utf8_lossy(&data).to_string());
-            }
-            "caption" => {
-                let mut data = Vec::new();
-                while let Some(Ok(chunk)) = field.next().await { data.extend_from_slice(&chunk); }
-                let val = String::from_utf8_lossy(&data).to_string();
-                if !val.is_empty() { caption = Some(val); }
-            }
-            "file" => {
-                if let Some(ct) = field.content_type() {
-                    mime_type = ct.to_string();
-                }
-                if mime_type.starts_with("image") { media_type = "image".into(); }
-                else if mime_type.starts_with("video") { media_type = "video".into(); }
-                else if mime_type.starts_with("audio") { media_type = "audio".into(); }
-
-                let filename = field.content_disposition()
-                    .and_then(|cd| cd.get_filename().map(|s| s.to_string()))
-                    .unwrap_or_else(|| "upload".to_string());
-
-                let dir = std::path::PathBuf::from("media/uploads");
-                tokio::fs::create_dir_all(&dir).await.ok();
-                let dest = dir.join(format!("{}_{}", chrono::Utc::now().timestamp(), filename));
-
-                let mut data = Vec::new();
-                while let Some(Ok(chunk)) = field.next().await { data.extend_from_slice(&chunk); }
-                if let Err(e) = tokio::fs::write(&dest, &data).await {
-                    return HttpResponse::InternalServerError().json(SendResponse {
-                        success: false, wa_message_id: None, error: Some(format!("Save file: {}", e)),
-                    });
-                }
-                file_path = Some(dest.to_string_lossy().to_string());
-            }
-            _ => {}
-        }
-    }
-
-    let phone = match phone {
-        Some(p) => p,
-        None => return HttpResponse::BadRequest().json(SendResponse {
-            success: false, wa_message_id: None, error: Some("Missing 'to' field".into()),
-        }),
-    };
-    let file_path = match file_path {
-        Some(f) => f,
-        None => return HttpResponse::BadRequest().json(SendResponse {
-            success: false, wa_message_id: None, error: Some("Missing 'file' field".into()),
-        }),
-    };
-
-    let sender = WhatsAppSender::new(&config);
-
-    // Upload to Meta
-    let media_id = match sender.upload_media(&file_path, &mime_type).await {
-        Ok(id) => id,
-        Err(e) => return HttpResponse::Ok().json(SendResponse {
-            success: false, wa_message_id: None, error: Some(format!("Upload to Meta: {}", e)),
-        }),
-    };
-
-    // Send using media_id
-    match sender.send_media_by_id(&phone, &media_type, &media_id, caption.as_deref()).await {
-        Ok(id) => {
-            store_outbound_message(db.get_ref(), &phone, &media_type, caption.as_deref(), None, Some(&file_path), Some(&id)).await;
-            HttpResponse::Ok().json(SendResponse {
-                success: true, wa_message_id: Some(id), error: None,
-            })
-        }
-        Err(e) => HttpResponse::Ok().json(SendResponse {
-            success: false, wa_message_id: None, error: Some(e),
-        }),
+fn sanitize_filename(filename: &str) -> String {
+    let sanitized = filename
+        .chars()
+        .map(|ch| match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '.' | '-' | '_' => ch,
+            _ => '_',
+        })
+        .collect::<String>()
+        .trim_matches('.')
+        .trim_matches('_')
+        .to_string();
+    if sanitized.is_empty() {
+        "file.bin".to_string()
+    } else {
+        sanitized
     }
 }
 
@@ -584,4 +926,23 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .service(send_media)
             .service(send_upload),
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn media_type_from_mime_maps_common_types() {
+        assert_eq!(media_type_from_mime("image/png"), "image");
+        assert_eq!(media_type_from_mime("video/mp4"), "video");
+        assert_eq!(media_type_from_mime("audio/ogg"), "audio");
+        assert_eq!(media_type_from_mime("application/pdf"), "document");
+    }
+
+    #[test]
+    fn sanitize_filename_rejects_path_segments() {
+        assert_eq!(sanitize_filename("../hello world!.jpg"), "hello_world_.jpg");
+        assert_eq!(sanitize_filename("////"), "file.bin");
+    }
 }
