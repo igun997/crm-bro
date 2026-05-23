@@ -1,10 +1,10 @@
 .PHONY: run build check test clean fmt lint dev db-check migrate static seed-admin
 
 run:
-	RUST_LOG=debug cargo run
+	RUST_LOG=debug cargo run --bin crm-bro
 
 dev:
-	RUST_LOG=debug cargo watch -i media/ -x run
+	RUST_LOG=debug cargo watch -i media/ -x 'run --bin crm-bro'
 
 build:
 	cargo build --release

@@ -1,9 +1,12 @@
-use actix_web::{web, HttpResponse, post};
+use actix_web::{post, web, HttpResponse};
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::auth::jwt::{build_claims, encode_jwt};
+use crate::auth::password::verify_password;
 use crate::config::AppConfig;
+use crate::models::user;
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct LoginRequest {
@@ -12,10 +15,22 @@ pub struct LoginRequest {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+pub struct LoginUser {
+    pub id: i32,
+    pub tenant_id: Option<i32>,
+    pub name: String,
+    pub email: String,
+    pub is_superadmin: bool,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
 pub struct LoginResponse {
-    pub token: String,
-    pub token_type: String,
-    pub expires_in: u64,
+    pub success: bool,
+    pub token: Option<String>,
+    pub token_type: Option<String>,
+    pub expires_in: Option<u64>,
+    pub user: Option<LoginUser>,
+    pub error: Option<String>,
 }
 
 /// Login - returns JWT token
@@ -33,29 +48,139 @@ pub struct LoginResponse {
 pub async fn login(
     body: web::Json<LoginRequest>,
     config: web::Data<AppConfig>,
+    db: web::Data<DatabaseConnection>,
 ) -> HttpResponse {
-    // TODO: validate against DB users table (Task 5)
-    // Placeholder: accept test@test.com / password
-    if body.email != "test@test.com" || body.password != "password" {
-        return HttpResponse::Unauthorized().json(serde_json::json!({
-            "error": "Invalid credentials"
-        }));
+    let user = match user::Entity::find()
+        .filter(user::Column::Email.eq(&body.email))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(user)) => user,
+        Ok(None) => return invalid_credentials(),
+        Err(error) => {
+            tracing::error!(%error, "User lookup failed during login");
+            return HttpResponse::InternalServerError().json(LoginResponse {
+                success: false,
+                token: None,
+                token_type: None,
+                expires_in: None,
+                user: None,
+                error: Some("Login failed".to_string()),
+            });
+        }
+    };
+
+    if !user.is_active || !verify_password(&body.password, &user.password_hash) {
+        return invalid_credentials();
     }
 
     let expires_in: u64 = 3600;
-    // Placeholder user id 1 until Task 5 wires up real DB lookup
-    let claims = build_claims(1, None, false, expires_in);
+    let claims = build_claims(user.id, user.tenant_id, user.is_superadmin, expires_in);
 
-    let token = encode_jwt(&claims, &config.jwt_secret)
-        .expect("JWT encoding failed");
+    let token = match encode_jwt(&claims, &config.jwt_secret) {
+        Ok(token) => token,
+        Err(error) => {
+            tracing::error!(%error, "JWT encoding failed");
+            return HttpResponse::InternalServerError().json(LoginResponse {
+                success: false,
+                token: None,
+                token_type: None,
+                expires_in: None,
+                user: None,
+                error: Some("Token creation failed".to_string()),
+            });
+        }
+    };
 
     HttpResponse::Ok().json(LoginResponse {
-        token,
-        token_type: "Bearer".into(),
-        expires_in,
+        success: true,
+        token: Some(token),
+        token_type: Some("Bearer".into()),
+        expires_in: Some(expires_in),
+        user: Some(LoginUser {
+            id: user.id,
+            tenant_id: user.tenant_id,
+            name: user.name,
+            email: user.email,
+            is_superadmin: user.is_superadmin,
+        }),
+        error: None,
+    })
+}
+
+fn invalid_credentials() -> HttpResponse {
+    HttpResponse::Unauthorized().json(LoginResponse {
+        success: false,
+        token: None,
+        token_type: None,
+        expires_in: None,
+        user: None,
+        error: Some("Invalid credentials".to_string()),
     })
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(login);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{http::StatusCode, test, App};
+    use sea_orm::Database;
+
+    async fn login_status(email: &str, password: &str) -> StatusCode {
+        let _ = dotenvy::dotenv();
+        let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL for auth route test");
+        let db = Database::connect(&database_url).await.expect("db connect");
+        let config = AppConfig {
+            database_url,
+            jwt_secret: "test-auth-secret".to_string(),
+            server_host: "127.0.0.1".to_string(),
+            server_port: 8080,
+            wa_phone_number_id: String::new(),
+            wa_access_token: String::new(),
+            wa_verify_token: String::new(),
+            wa_api_version: "v25.0".to_string(),
+        };
+
+        let app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(db))
+                .app_data(web::Data::new(config))
+                .configure(configure),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/auth/login")
+            .set_json(&serde_json::json!({
+                "email": email,
+                "password": password
+            }))
+            .to_request();
+
+        test::call_service(&app, req).await.status()
+    }
+
+    #[actix_rt::test]
+    async fn seeded_admin_can_login_with_real_db_user() {
+        assert_eq!(login_status("admin@example.invalid", "REDACTED_ADMIN_PASSWORD").await, StatusCode::OK);
+    }
+
+    #[actix_rt::test]
+    async fn seeded_admin_wrong_password_is_rejected() {
+        assert_eq!(
+            login_status("admin@example.invalid", "wrong-password").await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
+
+    #[actix_rt::test]
+    async fn old_stub_credentials_are_rejected() {
+        assert_eq!(
+            login_status("test@test.com", "password").await,
+            StatusCode::UNAUTHORIZED
+        );
+    }
 }

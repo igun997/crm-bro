@@ -13,7 +13,7 @@ use actix::Actor;
 
 use config::AppConfig;
 use routes::health::HealthResponse;
-use routes::auth::{LoginRequest, LoginResponse};
+use routes::auth::{LoginRequest, LoginResponse, LoginUser};
 use routes::chat::{
     ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages,
     SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
@@ -32,7 +32,7 @@ use routes::chat::{
         routes::chat::send_media,
     ),
     components(schemas(
-        HealthResponse, LoginRequest, LoginResponse,
+        HealthResponse, LoginRequest, LoginResponse, LoginUser,
         ConversationResponse, MessageResponse,
         PaginatedConversations, PaginatedMessages,
         SendTextBody, SendTemplateBody, SendMediaBody, SendResponse,
