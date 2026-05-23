@@ -1,4 +1,4 @@
-.PHONY: run build check test clean fmt lint dev
+.PHONY: run build check test clean fmt lint dev db-check migrate static seed-admin
 
 run:
 	RUST_LOG=debug cargo run
@@ -25,13 +25,17 @@ lint:
 	cargo clippy -- -D warnings
 
 db-check:
-	mysql -u REDACTED_DB_USER -p'REDACTED_DB_PASSWORD' -h localhost crmbro -e "SELECT 'Connection successful!' as status;"
+	@set -a; . ./.env; set +a; \
+	eval $$(python3 -c 'import os, shlex; from urllib.parse import urlparse; u=urlparse(os.environ["DATABASE_URL"]); print(f"DB_USER={shlex.quote(u.username or "")} DB_PASSWORD={shlex.quote(u.password or "")} DB_HOST={shlex.quote(u.hostname or "localhost")} DB_NAME={shlex.quote(u.path.lstrip("/"))}")'); \
+	MYSQL_PWD="$$DB_PASSWORD" mysql -u "$$DB_USER" -h "$$DB_HOST" "$$DB_NAME" -e "SELECT 'Connection successful!' as status;"
 
 migrate:
 	@echo "Running migrations..."
-	@for f in migrations/*.sql; do \
+	@set -a; . ./.env; set +a; \
+	eval $$(python3 -c 'import os, shlex; from urllib.parse import urlparse; u=urlparse(os.environ["DATABASE_URL"]); print(f"DB_USER={shlex.quote(u.username or "")} DB_PASSWORD={shlex.quote(u.password or "")} DB_HOST={shlex.quote(u.hostname or "localhost")} DB_NAME={shlex.quote(u.path.lstrip("/"))}")'); \
+	for f in migrations/*.sql; do \
 		echo "Applying $$f"; \
-		mysql -u REDACTED_DB_USER -p'REDACTED_DB_PASSWORD' -h localhost crmbro < $$f; \
+		MYSQL_PWD="$$DB_PASSWORD" mysql -u "$$DB_USER" -h "$$DB_HOST" "$$DB_NAME" < $$f; \
 	done
 	@echo "Done."
 
@@ -40,4 +44,4 @@ static:
 	python3 -m http.server 3000 --directory static
 
 seed-admin:
-	cargo run --bin seed_admin -- --email "$(EMAIL)" --password "$(PASSWORD)" --name "$(NAME)"
+	cargo run --bin seed_admin -- --email "$(EMAIL)" --password-env "$${PASSWORD_ENV:-ADMIN_PASSWORD}" --name "$(NAME)"

@@ -1,6 +1,7 @@
 use clap::Parser;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, EntityTrait, QueryFilter,
+    QueryOrder,
 };
 
 use crm_bro::auth::password::hash_password;
@@ -18,9 +19,13 @@ struct Args {
     #[arg(long)]
     email: String,
 
-    /// Plaintext password (will be hashed before storage)
+    /// Plaintext password (dev only; prefer --password-env to avoid shell history/process list exposure)
     #[arg(long)]
-    password: String,
+    password: Option<String>,
+
+    /// Environment variable containing password (recommended)
+    #[arg(long, default_value = "ADMIN_PASSWORD")]
+    password_env: String,
 
     /// Display name for the superadmin
     #[arg(long)]
@@ -41,6 +46,20 @@ const PERMISSIONS: &[(&str, &str)] = &[
     ("admin.users.manage",       "Create and manage users"),
 ];
 
+fn resolve_password(args: &Args) -> anyhow::Result<String> {
+    if let Some(password) = &args.password {
+        tracing::warn!("--password exposes secrets in shell history/process list; prefer --password-env");
+        return Ok(password.clone());
+    }
+
+    std::env::var(&args.password_env).map_err(|_| {
+        anyhow::anyhow!(
+            "Password not provided. Set {} or pass --password-env <ENV_VAR>",
+            args.password_env
+        )
+    })
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // Load .env file if present (ignore error if missing)
@@ -51,6 +70,7 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
+    let password = resolve_password(&args)?;
 
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL must be set in environment or .env file");
@@ -75,8 +95,11 @@ async fn main() -> anyhow::Result<()> {
                 description: Set(Some(description.to_string())),
                 ..Default::default()
             };
-            perm.insert(&db).await?;
-            tracing::info!("  Created permission: {}", code);
+            if let Err(e) = perm.insert(&db).await {
+                tracing::warn!("  Permission insert skipped after race or duplicate: {}", e);
+            } else {
+                tracing::info!("  Created permission: {}", code);
+            }
         } else {
             tracing::info!("  Permission already exists: {}", code);
         }
@@ -87,6 +110,7 @@ async fn main() -> anyhow::Result<()> {
     let superadmin_role = match role::Entity::find()
         .filter(role::Column::Name.eq("superadmin"))
         .filter(role::Column::TenantId.is_null())
+        .order_by_asc(role::Column::Id)
         .one(&db)
         .await?
     {
@@ -110,7 +134,10 @@ async fn main() -> anyhow::Result<()> {
 
     // ── 3. Attach all permissions to superadmin role ─────────────────────────
     tracing::info!("Attaching permissions to superadmin role...");
-    let all_perms = permission::Entity::find().all(&db).await?;
+    let all_perms = permission::Entity::find()
+        .filter(permission::Column::Code.is_in(PERMISSIONS.iter().map(|(code, _)| *code)))
+        .all(&db)
+        .await?;
     for perm in &all_perms {
         let existing = role_permission::Entity::find()
             .filter(role_permission::Column::RoleId.eq(superadmin_role.id))
@@ -122,14 +149,17 @@ async fn main() -> anyhow::Result<()> {
                 role_id: Set(superadmin_role.id),
                 permission_id: Set(perm.id),
             };
-            rp.insert(&db).await?;
-            tracing::info!("  Attached permission '{}' to superadmin role", perm.code);
+            if let Err(e) = rp.insert(&db).await {
+                tracing::warn!("  Role permission insert skipped after race or duplicate: {}", e);
+            } else {
+                tracing::info!("  Attached permission '{}' to superadmin role", perm.code);
+            }
         }
     }
 
     // ── 4. Create/update user ────────────────────────────────────────────────
     tracing::info!("Creating/updating superadmin user '{}'...", args.email);
-    let password_hash = hash_password(&args.password)
+    let password_hash = hash_password(&password)
         .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?;
 
     let user_model = match user::Entity::find()
@@ -177,8 +207,11 @@ async fn main() -> anyhow::Result<()> {
             user_id: Set(user_model.id),
             role_id: Set(superadmin_role.id),
         };
-        ur.insert(&db).await?;
-        tracing::info!("  Attached superadmin role to user");
+        if let Err(e) = ur.insert(&db).await {
+            tracing::warn!("  User role insert skipped after race or duplicate: {}", e);
+        } else {
+            tracing::info!("  Attached superadmin role to user");
+        }
     } else {
         tracing::info!("  User already has superadmin role");
     }
