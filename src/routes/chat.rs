@@ -484,6 +484,17 @@ pub async fn send_upload(
         Err(response) => return response,
     };
 
+
+    // Resolve tenant-specific storage
+    let tenant_storage = match StorageService::resolve_for_tenant(db.get_ref(), tenant_id).await {
+        Ok(ts) => ts,
+        Err(error) => {
+            tracing::error!(%error, "Failed to resolve tenant storage");
+            None
+        }
+    };
+    let effective_storage = tenant_storage.as_ref().unwrap_or(storage.get_ref());
+
     let mut phone: Option<String> = None;
     let mut caption: Option<String> = None;
     let mut file_bytes: Option<Vec<u8>> = None;
@@ -612,7 +623,7 @@ pub async fn send_upload(
         msg.id,
         sanitize_filename(&filename)
     );
-    let stored = match storage.put(&key, Bytes::from(file_bytes), &mime_type).await {
+    let stored = match effective_storage.put(&key, Bytes::from(file_bytes), &mime_type).await {
         Ok(stored) => stored,
         Err(error) => {
             cleanup_message(db.get_ref(), msg.id).await;
