@@ -437,6 +437,21 @@ pub async fn send_media(
 }
 
 /// Upload and queue a file via WhatsApp
+#[utoipa::path(
+    post,
+    path = "/api/chat/send/upload",
+    request_body(
+        content_type = "multipart/form-data",
+        description = "Multipart upload with fields: to (phone), file (binary), caption (optional)"
+    ),
+    responses(
+        (status = 200, description = "Upload queued", body = SendResponse),
+        (status = 400, description = "Invalid multipart upload"),
+        (status = 401, description = "Unauthorized"),
+        (status = 403, description = "Forbidden"),
+    ),
+    tag = "Chat"
+)]
 #[post("/send/upload")]
 pub async fn send_upload(
     current: CurrentUser,

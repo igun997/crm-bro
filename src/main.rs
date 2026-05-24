@@ -53,6 +53,7 @@ use routes::settings::{
         routes::chat::send_text,
         routes::chat::send_template,
         routes::chat::send_media,
+        routes::chat::send_upload,
     ),
     components(schemas(
         HealthResponse, LoginRequest, LoginResponse, LoginUser,
