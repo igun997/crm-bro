@@ -14,7 +14,9 @@ use utoipa_swagger_ui::SwaggerUi;
 
 use config::AppConfig;
 use routes::admin::{
-    AdminUserResponse, CreateTenantRequest, CreateTenantUserRequest, TenantResponse,
+    AdminUserResponse, AssignRoleRequest, CreateRoleRequest, CreateTenantRequest,
+    CreateTenantUserRequest, PatchRoleRequest, PatchUserRequest, PermissionResponse,
+    ResetPasswordRequest, RoleResponse, TenantResponse,
 };
 use routes::auth::{LoginRequest, LoginResponse, LoginUser};
 use routes::chat::{
@@ -37,6 +39,16 @@ use routes::settings::{
         routes::auth::login,
         routes::admin::create_tenant,
         routes::admin::create_tenant_user,
+        routes::admin::list_tenant_users,
+        routes::admin::get_user,
+        routes::admin::update_user,
+        routes::admin::reset_user_password,
+        routes::admin::assign_user_role,
+        routes::admin::remove_user_role,
+        routes::admin::list_tenant_roles,
+        routes::admin::create_tenant_role,
+        routes::admin::update_role,
+        routes::admin::list_permissions,
         routes::settings::list_whatsapp_accounts,
         routes::settings::create_whatsapp_account,
         routes::settings::update_whatsapp_account,
@@ -58,6 +70,8 @@ use routes::settings::{
     components(schemas(
         HealthResponse, LoginRequest, LoginResponse, LoginUser,
         CreateTenantRequest, TenantResponse, CreateTenantUserRequest, AdminUserResponse,
+        PatchUserRequest, ResetPasswordRequest, AssignRoleRequest,
+        RoleResponse, CreateRoleRequest, PatchRoleRequest, PermissionResponse,
         WhatsAppAccountResponse, UpsertWhatsAppAccountRequest, PatchWhatsAppAccountRequest,
         ContactResponse, TagResponse, PaginatedContacts, PatchContactRequest, CreateTagRequest,
         AttachTagRequest,
