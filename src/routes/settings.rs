@@ -11,6 +11,18 @@ use crate::models::{tenant, tenant_whatsapp_account};
 use crate::rbac::{permissions, require_permission};
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({
+    "id": 1,
+    "tenant_id": 1,
+    "phone_number_id": "123456789",
+    "business_account_id": "987654321",
+    "display_phone_number": "+6281234567890",
+    "access_token_masked": "EAAG...xYzW",
+    "verify_token": "my-secret-verify-token",
+    "api_version": "v25.0",
+    "is_active": true,
+    "webhook_url": "https://crm.example.com/webhook/whatsapp/acme"
+}))]
 pub struct WhatsAppAccountResponse {
     pub id: i32,
     pub tenant_id: i32,
@@ -25,6 +37,15 @@ pub struct WhatsAppAccountResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "phone_number_id": "123456789",
+    "business_account_id": "987654321",
+    "display_phone_number": "+6281234567890",
+    "access_token": "EAAGxxxx...",
+    "verify_token": "my-secret-verify-token",
+    "api_version": "v25.0",
+    "is_active": true
+}))]
 pub struct UpsertWhatsAppAccountRequest {
     pub phone_number_id: String,
     pub business_account_id: String,
@@ -36,6 +57,7 @@ pub struct UpsertWhatsAppAccountRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"display_phone_number": "+6289876543210", "is_active": true}))]
 pub struct PatchWhatsAppAccountRequest {
     pub phone_number_id: Option<String>,
     pub business_account_id: Option<String>,

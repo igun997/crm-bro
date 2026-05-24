@@ -9,12 +9,14 @@ use crate::config::AppConfig;
 use crate::models::user;
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"email": "admin@acme.com", "password": "s3cret"}))]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"id": 1, "tenant_id": 1, "name": "Admin", "email": "admin@acme.com", "is_superadmin": false}))]
 pub struct LoginUser {
     pub id: i32,
     pub tenant_id: Option<i32>,
@@ -24,6 +26,14 @@ pub struct LoginUser {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({
+    "success": true,
+    "token": "eyJhbGciOiJIUzI1NiIs...",
+    "token_type": "Bearer",
+    "expires_in": 86400,
+    "user": {"id": 1, "tenant_id": 1, "name": "Admin", "email": "admin@acme.com", "is_superadmin": false},
+    "error": null
+}))]
 pub struct LoginResponse {
     pub success: bool,
     pub token: Option<String>,

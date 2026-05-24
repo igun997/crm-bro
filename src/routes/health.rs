@@ -4,6 +4,7 @@ use serde::Serialize;
 use utoipa::ToSchema;
 
 #[derive(Serialize, ToSchema)]
+#[schema(example = json!({"status": "ok", "database": "connected"}))]
 pub struct HealthResponse {
     pub status: String,
     pub database: String,

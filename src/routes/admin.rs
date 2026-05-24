@@ -12,12 +12,14 @@ use crate::models::{permission, role, role_permission, tenant, user, user_role};
 use crate::rbac::{default_tenant_roles, permissions as permission_codes};
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"name": "Acme Corp", "slug": "acme"}))]
 pub struct CreateTenantRequest {
     pub name: String,
     pub slug: String,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"id": 1, "name": "Acme Corp", "slug": "acme", "is_active": true}))]
 pub struct TenantResponse {
     pub id: i32,
     pub name: String,
@@ -26,6 +28,7 @@ pub struct TenantResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"email": "agent@acme.com", "password": "s3cret", "name": "John Agent"}))]
 pub struct CreateTenantUserRequest {
     pub email: String,
     pub password: String,
@@ -33,6 +36,7 @@ pub struct CreateTenantUserRequest {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"id": 2, "email": "agent@acme.com", "name": "John Agent", "tenant_id": 1, "is_superadmin": false, "is_active": true}))]
 pub struct AdminUserResponse {
     pub id: i32,
     pub email: String,
@@ -43,6 +47,7 @@ pub struct AdminUserResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"name": "Jane Agent", "is_active": true}))]
 pub struct PatchUserRequest {
     pub email: Option<String>,
     pub name: Option<String>,
@@ -50,16 +55,19 @@ pub struct PatchUserRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"password": "newP@ss123"}))]
 pub struct ResetPasswordRequest {
     pub password: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"role_id": 1}))]
 pub struct AssignRoleRequest {
     pub role_id: i32,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"id": 1, "tenant_id": 1, "name": "Tenant Admin", "description": "Full tenant access", "is_system": true, "permissions": ["tenant:manage", "users:manage", "settings:wa:manage"]}))]
 pub struct RoleResponse {
     pub id: i32,
     pub tenant_id: Option<i32>,
@@ -70,6 +78,7 @@ pub struct RoleResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"name": "Custom Agent", "description": "Limited agent role", "permissions": ["chat:read", "chat:send", "contacts:read"]}))]
 pub struct CreateRoleRequest {
     pub name: String,
     pub description: Option<String>,
@@ -77,6 +86,7 @@ pub struct CreateRoleRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"description": "Updated description", "permissions": ["chat:read", "chat:send"]}))]
 pub struct PatchRoleRequest {
     pub name: Option<String>,
     pub description: Option<String>,
@@ -84,6 +94,7 @@ pub struct PatchRoleRequest {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"id": 1, "code": "chat:read", "description": "View conversations and messages"}))]
 pub struct PermissionResponse {
     pub id: i32,
     pub code: String,

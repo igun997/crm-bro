@@ -10,6 +10,7 @@ use crate::auth::CurrentUser;
 use crate::models::{contact, contact_tag, tag, user};
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"id": 1, "tenant_id": 1, "name": "VIP", "color": "#ff0000"}))]
 pub struct TagResponse {
     pub id: i32,
     pub tenant_id: i32,
@@ -18,6 +19,12 @@ pub struct TagResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({
+    "id": 1, "tenant_id": 1, "phone": "628123456789",
+    "name": "Alice", "email": "alice@example.com", "company": "Acme",
+    "notes": "Key decision maker", "owner_user_id": 2,
+    "tags": [{"id": 1, "tenant_id": 1, "name": "VIP", "color": "#ff0000"}]
+}))]
 pub struct ContactResponse {
     pub id: i32,
     pub tenant_id: i32,
@@ -40,6 +47,7 @@ pub struct ContactListQuery {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"data": [], "page": 1, "per_page": 20, "total": 0}))]
 pub struct PaginatedContacts {
     pub data: Vec<ContactResponse>,
     pub page: u64,
@@ -48,6 +56,7 @@ pub struct PaginatedContacts {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"name": "Alice Updated", "company": "Acme Inc"}))]
 pub struct PatchContactRequest {
     pub name: Option<String>,
     pub email: Option<String>,
@@ -57,12 +66,14 @@ pub struct PatchContactRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"name": "VIP", "color": "#ff0000"}))]
 pub struct CreateTagRequest {
     pub name: String,
     pub color: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"tag_id": 1}))]
 pub struct AttachTagRequest {
     pub tag_id: Option<i32>,
     pub name: Option<String>,

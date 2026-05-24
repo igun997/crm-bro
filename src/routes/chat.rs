@@ -51,6 +51,7 @@ pub struct SearchMessagesQuery {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"to": "628123456789", "message": "Hello from CRM Bro!"}))]
 pub struct SendTextBody {
     /// Recipient phone number (with country code, e.g. 628xxx)
     pub to: String,
@@ -59,6 +60,7 @@ pub struct SendTextBody {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"to": "628123456789", "template_name": "hello_world", "language": "en_US"}))]
 pub struct SendTemplateBody {
     /// Recipient phone number
     pub to: String,
@@ -69,6 +71,7 @@ pub struct SendTemplateBody {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"to": "628123456789", "media_type": "image", "url": "https://example.com/photo.jpg", "caption": "Check this out"}))]
 pub struct SendMediaBody {
     /// Recipient phone number
     pub to: String,
@@ -81,6 +84,7 @@ pub struct SendMediaBody {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"id": 1, "contact_phone": "628123456789", "contact_name": "Alice", "last_message_at": "2026-05-24T10:00:00", "created_at": "2026-05-20T08:00:00"}))]
 pub struct ConversationResponse {
     pub id: i32,
     pub contact_phone: String,
@@ -90,6 +94,12 @@ pub struct ConversationResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({
+    "id": 1, "conversation_id": 1, "wa_message_id": "wamid.abc123",
+    "direction": "inbound", "msg_type": "text", "body": "Hello!",
+    "media_url": null, "media_mime": null, "template_name": null,
+    "status": "received", "timestamp": "2026-05-24T10:00:00"
+}))]
 pub struct MessageResponse {
     pub id: i32,
     pub conversation_id: i32,
@@ -105,6 +115,7 @@ pub struct MessageResponse {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"success": true, "data": [], "page": 1, "per_page": 20, "total": 0}))]
 pub struct PaginatedConversations {
     pub success: bool,
     pub data: Vec<ConversationResponse>,
@@ -114,6 +125,7 @@ pub struct PaginatedConversations {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"success": true, "data": [], "page": 1, "per_page": 20, "total": 0}))]
 pub struct PaginatedMessages {
     pub success: bool,
     pub data: Vec<MessageResponse>,
@@ -123,6 +135,7 @@ pub struct PaginatedMessages {
 }
 
 #[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({"success": true, "message_id": 42, "outbox_id": 7, "status": "queued", "wa_message_id": null, "error": null}))]
 pub struct SendResponse {
     pub success: bool,
     pub message_id: Option<i32>,
