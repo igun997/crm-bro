@@ -7,6 +7,7 @@ use super::types::*;
 pub struct WhatsAppSender {
     client: Client,
     base_url: String,
+    media_url: String,
     access_token: String,
 }
 
@@ -16,9 +17,14 @@ impl WhatsAppSender {
             "https://graph.facebook.com/{}/{}/messages",
             api_version, phone_number_id
         );
+        let media_url = format!(
+            "https://graph.facebook.com/{}/{}/media",
+            api_version, phone_number_id
+        );
         Self {
             client: Client::new(),
             base_url,
+            media_url,
             access_token: access_token.to_string(),
         }
     }
@@ -109,12 +115,6 @@ impl WhatsAppSender {
 
     /// Upload media to Meta and get media_id
     pub async fn upload_media(&self, file_path: &str, mime_type: &str) -> Result<String, String> {
-        let url = format!(
-            "https://graph.facebook.com/{}/{}/media",
-            std::env::var("WA_API_VERSION").unwrap_or_else(|_| "v25.0".into()),
-            std::env::var("WA_PHONE_NUMBER_ID").unwrap_or_default()
-        );
-
         let file_bytes = tokio::fs::read(file_path)
             .await
             .map_err(|e| format!("Read file failed: {}", e))?;
@@ -136,7 +136,7 @@ impl WhatsAppSender {
             .part("file", file_part);
 
         let resp = self.client
-            .post(&url)
+            .post(&self.media_url)
             .bearer_auth(&self.access_token)
             .multipart(form)
             .send()
