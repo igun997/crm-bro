@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-changeme}
+      MARIADB_DATABASE: ${DB_NAME:-crmbro}
+      MARIADB_USER: ${DB_USER:-crmbro}
+      MARIADB_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - db_data:/var/lib/mysql
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: ghcr.io/igun997/crm-bro:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: mysql://${DB_USER:-crmbro}:${DB_PASSWORD:-changeme}@db:3306/${DB_NAME:-crmbro}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_LOCAL_DIR: /app/media
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      # First-deploy admin seeding (set these on first run, remove after)
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_NAME: ${ADMIN_NAME:-Admin}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - media_data:/app/media
+    command: ["api"]
+
+  worker:
+    image: ghcr.io/igun997/crm-bro:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql://${DB_USER:-crmbro}:${DB_PASSWORD:-changeme}@db:3306/${DB_NAME:-crmbro}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-local}
+      STORAGE_LOCAL_DIR: /app/media
+      R2_ENDPOINT: ${R2_ENDPOINT:-}
+      R2_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      R2_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      R2_BUCKET: ${R2_BUCKET:-}
+      R2_PUBLIC_BASE_URL: ${R2_PUBLIC_BASE_URL:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - media_data:/app/media
+    command: ["worker"]
+
+volumes:
+  db_data:
+  media_data:
