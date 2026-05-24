@@ -9,6 +9,7 @@ use utoipa::ToSchema;
 use crate::auth::password::hash_password;
 use crate::auth::CurrentUser;
 use crate::models::{permission, role, role_permission, tenant, user, user_role};
+use crate::rbac::{default_tenant_roles, permissions as permission_codes};
 
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTenantRequest {
@@ -118,12 +119,17 @@ pub async fn create_tenant(
     };
 
     match new_tenant.insert(db.get_ref()).await {
-        Ok(tenant) => HttpResponse::Ok().json(TenantResponse {
-            id: tenant.id,
-            name: tenant.name,
-            slug: tenant.slug,
-            is_active: tenant.is_active,
-        }),
+        Ok(tenant) => {
+            if let Err(error) = seed_default_tenant_roles(db.get_ref(), tenant.id).await {
+                tracing::warn!(%error, tenant_id = tenant.id, "Failed to seed default tenant roles");
+            }
+            HttpResponse::Ok().json(TenantResponse {
+                id: tenant.id,
+                name: tenant.name,
+                slug: tenant.slug,
+                is_active: tenant.is_active,
+            })
+        }
         Err(error) => {
             tracing::error!(%error, "Failed to create tenant");
             HttpResponse::Conflict().json(serde_json::json!({
@@ -238,7 +244,11 @@ fn can_manage_tenant(
     if ctx.is_superadmin {
         return Ok(());
     }
-    if ctx.tenant_id == Some(tenant_id) && ctx.permissions.contains("admin.users.manage") {
+    if ctx.tenant_id == Some(tenant_id)
+        && ctx
+            .permissions
+            .contains(permission_codes::ADMIN_USERS_MANAGE)
+    {
         return Ok(());
     }
     Err(forbidden())
@@ -682,7 +692,12 @@ pub async fn list_permissions(
     current: CurrentUser,
     db: web::Data<DatabaseConnection>,
 ) -> HttpResponse {
-    if !current.0.is_superadmin && !current.0.permissions.contains("admin.users.manage") {
+    if !current.0.is_superadmin
+        && !current
+            .0
+            .permissions
+            .contains(permission_codes::ADMIN_USERS_MANAGE)
+    {
         return forbidden();
     }
     match permission::Entity::find()
@@ -707,6 +722,41 @@ pub async fn list_permissions(
     }
 }
 
+async fn seed_default_tenant_roles(db: &DatabaseConnection, tenant_id: i32) -> Result<(), String> {
+    for role_def in default_tenant_roles() {
+        let existing = role::Entity::find()
+            .filter(role::Column::TenantId.eq(tenant_id))
+            .filter(role::Column::Name.eq(role_def.name))
+            .one(db)
+            .await
+            .map_err(|error| format!("Load role failed: {error}"))?;
+        let role = match existing {
+            Some(role) => role,
+            None => role::ActiveModel {
+                tenant_id: Set(Some(tenant_id)),
+                name: Set(role_def.name.to_string()),
+                description: Set(Some(role_def.description.to_string())),
+                is_system: Set(true),
+                ..Default::default()
+            }
+            .insert(db)
+            .await
+            .map_err(|error| format!("Create role failed: {error}"))?,
+        };
+        set_role_permissions(
+            db,
+            role.id,
+            &role_def
+                .permissions
+                .iter()
+                .map(|permission| permission.to_string())
+                .collect::<Vec<_>>(),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 async fn attach_default_role(
     db: &DatabaseConnection,
     tenant_id: i32,
@@ -714,7 +764,7 @@ async fn attach_default_role(
 ) -> Result<(), sea_orm::DbErr> {
     let Some(default_role) = role::Entity::find()
         .filter(role::Column::TenantId.eq(tenant_id))
-        .filter(role::Column::Name.is_in(["agent", "admin", "user"]))
+        .filter(role::Column::Name.eq(crate::rbac::roles::AGENT))
         .order_by_asc(role::Column::Id)
         .one(db)
         .await?
@@ -998,6 +1048,34 @@ mod tests {
         let (denied_status, _) =
             post_tenant(Some(token_for_user(user_id)), "Denied", &denied_slug).await;
         assert_eq!(denied_status, StatusCode::FORBIDDEN);
+    }
+
+    #[actix_rt::test]
+    async fn creating_tenant_seeds_default_roles() {
+        let suffix = chrono::Utc::now().timestamp_nanos_opt().unwrap();
+        let slug = format!("test-default-roles-{suffix}");
+        let (tenant_status, tenant_body) =
+            post_tenant(Some(admin_token()), "Default Roles Tenant", &slug).await;
+        assert_eq!(tenant_status, StatusCode::OK);
+        let tenant_id = tenant_body["id"].as_i64().expect("tenant id") as i32;
+
+        let (roles_status, roles) = admin_request(
+            "GET",
+            &format!("/admin/tenants/{tenant_id}/roles"),
+            Some(admin_token()),
+            None,
+        )
+        .await;
+        assert_eq!(roles_status, StatusCode::OK);
+        let names = roles
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|role| role["name"].as_str().unwrap())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"tenant_admin"));
+        assert!(names.contains(&"agent"));
+        assert!(names.contains(&"viewer"));
     }
 
     #[actix_rt::test]

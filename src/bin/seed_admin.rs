@@ -1,7 +1,6 @@
 use clap::Parser;
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, EntityTrait, QueryFilter,
-    QueryOrder,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, EntityTrait, QueryFilter, QueryOrder,
 };
 
 use crm_bro::auth::password::hash_password;
@@ -10,6 +9,7 @@ use crm_bro::models::role;
 use crm_bro::models::role_permission;
 use crm_bro::models::user;
 use crm_bro::models::user_role;
+use crm_bro::rbac::{roles, PERMISSIONS, SUPERADMIN_ROLE};
 
 /// Seed a superadmin user into the database.
 #[derive(Parser, Debug)]
@@ -32,23 +32,11 @@ struct Args {
     name: String,
 }
 
-/// All permission codes that should exist in the system.
-const PERMISSIONS: &[(&str, &str)] = &[
-    ("chats.read",               "Read conversations and messages"),
-    ("chats.send",               "Send messages"),
-    ("contacts.read",            "Read contacts"),
-    ("contacts.write",           "Create and update contacts"),
-    ("contacts.delete",          "Delete contacts"),
-    ("tags.read",                "Read tags"),
-    ("tags.write",               "Create and update tags"),
-    ("settings.whatsapp.manage", "Manage WhatsApp account settings"),
-    ("admin.tenants.manage",     "Create and manage tenants"),
-    ("admin.users.manage",       "Create and manage users"),
-];
-
 fn resolve_password(args: &Args) -> anyhow::Result<String> {
     if let Some(password) = &args.password {
-        tracing::warn!("--password exposes secrets in shell history/process list; prefer --password-env");
+        tracing::warn!(
+            "--password exposes secrets in shell history/process list; prefer --password-env"
+        );
         return Ok(password.clone());
     }
 
@@ -83,32 +71,32 @@ async fn main() -> anyhow::Result<()> {
 
     // ── 1. Seed permissions ──────────────────────────────────────────────────
     tracing::info!("Seeding permissions...");
-    for (code, description) in PERMISSIONS {
+    for permission_def in PERMISSIONS {
         let existing = permission::Entity::find()
-            .filter(permission::Column::Code.eq(*code))
+            .filter(permission::Column::Code.eq(permission_def.code))
             .one(&db)
             .await?;
 
         if existing.is_none() {
             let perm = permission::ActiveModel {
-                code: Set(code.to_string()),
-                description: Set(Some(description.to_string())),
+                code: Set(permission_def.code.to_string()),
+                description: Set(Some(permission_def.description.to_string())),
                 ..Default::default()
             };
             if let Err(e) = perm.insert(&db).await {
                 tracing::warn!("  Permission insert skipped after race or duplicate: {}", e);
             } else {
-                tracing::info!("  Created permission: {}", code);
+                tracing::info!("  Created permission: {}", permission_def.code);
             }
         } else {
-            tracing::info!("  Permission already exists: {}", code);
+            tracing::info!("  Permission already exists: {}", permission_def.code);
         }
     }
 
     // ── 2. Create/find superadmin role ───────────────────────────────────────
     tracing::info!("Ensuring superadmin role exists...");
     let superadmin_role = match role::Entity::find()
-        .filter(role::Column::Name.eq("superadmin"))
+        .filter(role::Column::Name.eq(roles::SUPERADMIN))
         .filter(role::Column::TenantId.is_null())
         .order_by_asc(role::Column::Id)
         .one(&db)
@@ -121,8 +109,8 @@ async fn main() -> anyhow::Result<()> {
         None => {
             let new_role = role::ActiveModel {
                 tenant_id: Set(None),
-                name: Set("superadmin".to_string()),
-                description: Set(Some("System superadmin role with all permissions".to_string())),
+                name: Set(SUPERADMIN_ROLE.name.to_string()),
+                description: Set(Some(SUPERADMIN_ROLE.description.to_string())),
                 is_system: Set(true),
                 ..Default::default()
             };
@@ -135,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
     // ── 3. Attach all permissions to superadmin role ─────────────────────────
     tracing::info!("Attaching permissions to superadmin role...");
     let all_perms = permission::Entity::find()
-        .filter(permission::Column::Code.is_in(PERMISSIONS.iter().map(|(code, _)| *code)))
+        .filter(permission::Column::Code.is_in(SUPERADMIN_ROLE.permissions.iter().copied()))
         .all(&db)
         .await?;
     for perm in &all_perms {
@@ -150,7 +138,10 @@ async fn main() -> anyhow::Result<()> {
                 permission_id: Set(perm.id),
             };
             if let Err(e) = rp.insert(&db).await {
-                tracing::warn!("  Role permission insert skipped after race or duplicate: {}", e);
+                tracing::warn!(
+                    "  Role permission insert skipped after race or duplicate: {}",
+                    e
+                );
             } else {
                 tracing::info!("  Attached permission '{}' to superadmin role", perm.code);
             }
@@ -159,8 +150,8 @@ async fn main() -> anyhow::Result<()> {
 
     // ── 4. Create/update user ────────────────────────────────────────────────
     tracing::info!("Creating/updating superadmin user '{}'...", args.email);
-    let password_hash = hash_password(&password)
-        .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?;
+    let password_hash =
+        hash_password(&password).map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?;
 
     let user_model = match user::Entity::find()
         .filter(user::Column::Email.eq(&args.email))

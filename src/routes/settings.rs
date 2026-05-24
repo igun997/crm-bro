@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::auth::CurrentUser;
 use crate::models::tenant_whatsapp_account;
-use crate::rbac::require_permission;
+use crate::rbac::{permissions, require_permission};
 
 #[derive(Debug, Serialize, ToSchema)]
 pub struct WhatsAppAccountResponse {
@@ -56,7 +56,7 @@ pub async fn list_whatsapp_accounts(
     db: web::Data<DatabaseConnection>,
 ) -> HttpResponse {
     let ctx = &current.0;
-    if let Err(response) = require_permission(ctx, "settings.whatsapp.manage") {
+    if let Err(response) = require_permission(ctx, permissions::SETTINGS_WHATSAPP_MANAGE) {
         return response;
     }
     let Some(tenant_id) = ctx.tenant_id else {
@@ -95,7 +95,7 @@ pub async fn create_whatsapp_account(
     body: web::Json<UpsertWhatsAppAccountRequest>,
 ) -> HttpResponse {
     let ctx = &current.0;
-    if let Err(response) = require_permission(ctx, "settings.whatsapp.manage") {
+    if let Err(response) = require_permission(ctx, permissions::SETTINGS_WHATSAPP_MANAGE) {
         return response;
     }
     let Some(tenant_id) = ctx.tenant_id else {
@@ -145,7 +145,7 @@ pub async fn update_whatsapp_account(
     body: web::Json<PatchWhatsAppAccountRequest>,
 ) -> HttpResponse {
     let ctx = &current.0;
-    if let Err(response) = require_permission(ctx, "settings.whatsapp.manage") {
+    if let Err(response) = require_permission(ctx, permissions::SETTINGS_WHATSAPP_MANAGE) {
         return response;
     }
     let Some(tenant_id) = ctx.tenant_id else {
@@ -261,6 +261,7 @@ mod tests {
     use crate::auth::password::hash_password;
     use crate::config::AppConfig;
     use crate::models::{permission, role, role_permission, tenant, user, user_role};
+    use crate::rbac::permissions;
 
     #[test]
     fn masks_long_access_token() {
@@ -307,14 +308,14 @@ mod tests {
         .expect("user");
 
         let permission = match permission::Entity::find()
-            .filter(permission::Column::Code.eq("settings.whatsapp.manage"))
+            .filter(permission::Column::Code.eq(permissions::SETTINGS_WHATSAPP_MANAGE))
             .one(&db)
             .await
             .expect("permission lookup")
         {
             Some(permission) => permission,
             None => permission::ActiveModel {
-                code: Set("settings.whatsapp.manage".to_string()),
+                code: Set(permissions::SETTINGS_WHATSAPP_MANAGE.to_string()),
                 description: Set(Some("Manage WhatsApp account settings".to_string())),
                 ..Default::default()
             }

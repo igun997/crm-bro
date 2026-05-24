@@ -11,7 +11,7 @@ use utoipa::{IntoParams, ToSchema};
 
 use crate::auth::extractor::CurrentUser;
 use crate::models::{contact, conversation, message, outbox_message, tenant_whatsapp_account};
-use crate::rbac::require_permission;
+use crate::rbac::{permissions, require_permission};
 use crate::storage::StorageService;
 
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
@@ -151,7 +151,7 @@ pub async fn list_conversations(
     query: web::Query<ListConversationsQuery>,
 ) -> HttpResponse {
     let ctx = current.0;
-    if let Err(response) = require_permission(&ctx, "chats.read") {
+    if let Err(response) = require_permission(&ctx, permissions::CHATS_READ) {
         return response;
     }
     let tenant_id = match require_tenant(&ctx) {
@@ -185,7 +185,10 @@ pub async fn list_conversations(
         .await
         .unwrap_or_default();
 
-    let data = conversations.into_iter().map(conversation_response).collect();
+    let data = conversations
+        .into_iter()
+        .map(conversation_response)
+        .collect();
 
     HttpResponse::Ok().json(PaginatedConversations {
         success: true,
@@ -218,7 +221,7 @@ pub async fn get_messages_by_phone(
     query: web::Query<ListMessagesQuery>,
 ) -> HttpResponse {
     let ctx = current.0;
-    if let Err(response) = require_permission(&ctx, "chats.read") {
+    if let Err(response) = require_permission(&ctx, permissions::CHATS_READ) {
         return response;
     }
     let tenant_id = match require_tenant(&ctx) {
@@ -290,7 +293,7 @@ pub async fn search_messages(
     query: web::Query<SearchMessagesQuery>,
 ) -> HttpResponse {
     let ctx = current.0;
-    if let Err(response) = require_permission(&ctx, "chats.read") {
+    if let Err(response) = require_permission(&ctx, permissions::CHATS_READ) {
         return response;
     }
     let tenant_id = match require_tenant(&ctx) {
@@ -460,7 +463,7 @@ pub async fn send_upload(
     mut payload: Multipart,
 ) -> HttpResponse {
     let ctx = current.0;
-    if let Err(response) = require_permission(&ctx, "chats.send") {
+    if let Err(response) = require_permission(&ctx, permissions::CHATS_SEND) {
         return response;
     }
     let tenant_id = match require_tenant(&ctx) {
@@ -494,7 +497,9 @@ pub async fn send_upload(
             "caption" => {
                 let value = match read_text_field(&mut field).await {
                     Ok(value) => value,
-                    Err(error) => return send_error(actix_web::http::StatusCode::BAD_REQUEST, &error),
+                    Err(error) => {
+                        return send_error(actix_web::http::StatusCode::BAD_REQUEST, &error)
+                    }
                 };
                 if !value.is_empty() {
                     caption = Some(value);
@@ -521,7 +526,10 @@ pub async fn send_upload(
                         }
                     };
                     if data.len() + chunk.len() > MAX_UPLOAD_BYTES {
-                        return send_error(actix_web::http::StatusCode::PAYLOAD_TOO_LARGE, "Upload too large");
+                        return send_error(
+                            actix_web::http::StatusCode::PAYLOAD_TOO_LARGE,
+                            "Upload too large",
+                        );
                     }
                     data.extend_from_slice(&chunk);
                 }
@@ -533,11 +541,21 @@ pub async fn send_upload(
 
     let phone = match phone {
         Some(p) if !p.trim().is_empty() => p,
-        _ => return send_error(actix_web::http::StatusCode::BAD_REQUEST, "Missing 'to' field"),
+        _ => {
+            return send_error(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                "Missing 'to' field",
+            )
+        }
     };
     let file_bytes = match file_bytes {
         Some(bytes) => bytes,
-        None => return send_error(actix_web::http::StatusCode::BAD_REQUEST, "Missing 'file' field"),
+        None => {
+            return send_error(
+                actix_web::http::StatusCode::BAD_REQUEST,
+                "Missing 'file' field",
+            )
+        }
     };
 
     let account_id = match active_whatsapp_account_id(db.get_ref(), tenant_id).await {
@@ -547,7 +565,9 @@ pub async fn send_upload(
 
     let (contact, conv) = match ensure_contact_conversation(db.get_ref(), tenant_id, &phone).await {
         Ok(pair) => pair,
-        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => {
+            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error)
+        }
     };
 
     let now = chrono::Utc::now().naive_utc();
@@ -568,7 +588,9 @@ pub async fn send_upload(
     .await
     {
         Ok(msg) => msg,
-        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => {
+            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error)
+        }
     };
 
     let key = format!(
@@ -648,7 +670,7 @@ async fn queue_send(
     mut payload: serde_json::Value,
 ) -> HttpResponse {
     let ctx = current.0;
-    if let Err(response) = require_permission(&ctx, "chats.send") {
+    if let Err(response) = require_permission(&ctx, permissions::CHATS_SEND) {
         return response;
     }
     let tenant_id = match require_tenant(&ctx) {
@@ -662,7 +684,9 @@ async fn queue_send(
     };
     let (contact, conv) = match ensure_contact_conversation(db, tenant_id, phone).await {
         Ok(pair) => pair,
-        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => {
+            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error)
+        }
     };
     payload["whatsapp_account_id"] = serde_json::json!(account_id);
 
@@ -684,7 +708,9 @@ async fn queue_send(
     .await
     {
         Ok(msg) => msg,
-        Err(error) => return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
+        Err(error) => {
+            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error)
+        }
     };
 
     let kind = if msg_type == "template" {
@@ -764,7 +790,10 @@ async fn cleanup_message(db: &DatabaseConnection, message_id: i32) {
     }
 }
 
-async fn active_whatsapp_account_id(db: &DatabaseConnection, tenant_id: i32) -> Result<i32, String> {
+async fn active_whatsapp_account_id(
+    db: &DatabaseConnection,
+    tenant_id: i32,
+) -> Result<i32, String> {
     tenant_whatsapp_account::Entity::find()
         .filter(tenant_whatsapp_account::Column::TenantId.eq(tenant_id))
         .filter(tenant_whatsapp_account::Column::IsActive.eq(true))
@@ -811,7 +840,10 @@ async fn create_queued_message(
     .await
     .map_err(|error| format!("DB insert queued message: {error}"))?;
 
-    if let Ok(Some(conv)) = conversation::Entity::find_by_id(conversation_id).one(db).await {
+    if let Ok(Some(conv)) = conversation::Entity::find_by_id(conversation_id)
+        .one(db)
+        .await
+    {
         let mut update: conversation::ActiveModel = conv.into();
         update.last_message_at = Set(Some(now));
         let _ = update.update(db).await;
