@@ -751,7 +751,7 @@ mod tests {
         let patch_req = awtest::TestRequest::patch()
             .uri(&format!("/contacts/{}", contact.id))
             .insert_header(("Authorization", format!("Bearer {token}")))
-            .set_json(&serde_json::json!({"company": "Updated Co"}))
+            .set_json(serde_json::json!({"company": "Updated Co"}))
             .to_request();
         let patch_resp = awtest::call_service(&app, patch_req).await;
         assert_eq!(patch_resp.status(), StatusCode::OK);
@@ -762,7 +762,7 @@ mod tests {
         let cross_owner_req = awtest::TestRequest::patch()
             .uri(&format!("/contacts/{}", contact.id))
             .insert_header(("Authorization", format!("Bearer {token}")))
-            .set_json(&serde_json::json!({"owner_user_id": other_user.id}))
+            .set_json(serde_json::json!({"owner_user_id": other_user.id}))
             .to_request();
         let cross_owner_resp = awtest::call_service(&app, cross_owner_req).await;
         assert_eq!(cross_owner_resp.status(), StatusCode::BAD_REQUEST);
@@ -770,7 +770,7 @@ mod tests {
         let attach_req = awtest::TestRequest::post()
             .uri(&format!("/contacts/{}/tags", contact.id))
             .insert_header(("Authorization", format!("Bearer {token}")))
-            .set_json(&serde_json::json!({"name": "vip", "color": "#16a34a"}))
+            .set_json(serde_json::json!({"name": "vip", "color": "#16a34a"}))
             .to_request();
         let attach_resp = awtest::call_service(&app, attach_req).await;
         assert_eq!(attach_resp.status(), StatusCode::OK);

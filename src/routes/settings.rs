@@ -474,7 +474,7 @@ mod tests {
         let create_req = awtest::TestRequest::post()
             .uri("/settings/whatsapp")
             .insert_header(("Authorization", format!("Bearer {token}")))
-            .set_json(&serde_json::json!({
+            .set_json(serde_json::json!({
                 "phone_number_id": phone_number_id,
                 "business_account_id": "biz-123",
                 "display_phone_number": "62800000000",
@@ -496,7 +496,7 @@ mod tests {
         let patch_req = awtest::TestRequest::patch()
             .uri(&format!("/settings/whatsapp/{account_id}"))
             .insert_header(("Authorization", format!("Bearer {token}")))
-            .set_json(&serde_json::json!({
+            .set_json(serde_json::json!({
                 "access_token": "updated-token-9876",
                 "is_active": false
             }))

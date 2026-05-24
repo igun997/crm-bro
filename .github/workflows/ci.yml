@@ -1,0 +1,106 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  check:
+    name: Check & Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo fmt
+        run: cargo fmt --check
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo check
+        run: cargo check --all-targets
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: ci_root_pass
+          MARIADB_DATABASE: crmbro_ci
+          MARIADB_USER: crmbro_ci
+          MARIADB_PASSWORD: crmbro_ci_pass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Wait for MariaDB
+        run: |
+          until mysqladmin ping -h 127.0.0.1 -u crmbro_ci -pcrmbro_ci_pass --silent; do
+            echo "Waiting for MariaDB..."
+            sleep 2
+          done
+
+      - name: Run migrations
+        run: |
+          for f in migrations/*.sql; do
+            echo "Applying $f"
+            mysql -h 127.0.0.1 -u crmbro_ci -pcrmbro_ci_pass crmbro_ci < "$f"
+          done
+
+      - name: Seed test admin
+        env:
+          DATABASE_URL: mysql://crmbro_ci:crmbro_ci_pass@127.0.0.1:3306/crmbro_ci
+          ADMIN_PASSWORD: ci_test_admin_pass
+        run: |
+          cargo run --bin seed_admin -- \
+            --email "ci-admin@test.com" \
+            --password-env ADMIN_PASSWORD \
+            --name "CI Admin"
+
+      - name: Run tests
+        env:
+          DATABASE_URL: mysql://crmbro_ci:crmbro_ci_pass@127.0.0.1:3306/crmbro_ci
+          JWT_SECRET: ci-test-jwt-secret
+          APP_BASE_URL: http://localhost:8080
+          CRM_BRO_TEST_ADMIN_EMAIL: ci-admin@test.com
+          CRM_BRO_TEST_ADMIN_PASSWORD: ci_test_admin_pass
+        run: cargo test --lib -- --test-threads=1
+
+  build:
+    name: Build Release
+    runs-on: ubuntu-latest
+    needs: [check, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: cargo build --release
+        run: cargo build --release

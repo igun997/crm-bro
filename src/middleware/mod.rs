@@ -17,9 +17,5 @@ pub async fn validate_token(req: &ServiceRequest, token: &str) -> Result<Claims,
 
 #[allow(dead_code)]
 pub fn extract_bearer(auth_header: &str) -> Option<&str> {
-    if auth_header.starts_with("Bearer ") {
-        Some(&auth_header[7..])
-    } else {
-        None
-    }
+    auth_header.strip_prefix("Bearer ")
 }

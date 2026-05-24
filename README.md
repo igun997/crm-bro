@@ -1,5 +1,7 @@
 # CRM-Bro
 
+[![CI](https://github.com/igun997/crm-bro/actions/workflows/ci.yml/badge.svg)](https://github.com/igun997/crm-bro/actions/workflows/ci.yml)
+
 Multi-tenant WhatsApp CRM built with Rust.
 
 ## Stack

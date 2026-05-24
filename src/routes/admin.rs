@@ -872,7 +872,7 @@ mod tests {
 
         let mut req = test::TestRequest::post()
             .uri("/admin/tenants")
-            .set_json(&serde_json::json!({"name": name, "slug": slug}));
+            .set_json(serde_json::json!({"name": name, "slug": slug}));
         if let Some(token) = token {
             req = req.insert_header(("Authorization", format!("Bearer {token}")));
         }
@@ -979,7 +979,7 @@ mod tests {
 
         let mut req = test::TestRequest::post()
             .uri(&format!("/admin/tenants/{tenant_id}/users"))
-            .set_json(&serde_json::json!({
+            .set_json(serde_json::json!({
                 "email": email,
                 "password": "agent123456",
                 "name": "Agent Test"

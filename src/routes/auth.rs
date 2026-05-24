@@ -168,7 +168,7 @@ mod tests {
 
         let req = test::TestRequest::post()
             .uri("/auth/login")
-            .set_json(&serde_json::json!({
+            .set_json(serde_json::json!({
                 "email": email,
                 "password": password
             }))

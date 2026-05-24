@@ -45,6 +45,12 @@ pub struct ChatHub {
     conversation_sessions: HashMap<i32, HashMap<i32, HashMap<usize, Recipient<ChatMessage>>>>,
 }
 
+impl Default for ChatHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ChatHub {
     pub fn new() -> Self {
         Self {
@@ -66,7 +72,7 @@ impl Handler<Connect> for ChatHub {
             None => {
                 self.global_sessions
                     .entry(msg.tenant_id)
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .insert(msg.id, msg.addr);
                 tracing::info!(
                     "WS global client {} connected to tenant {}",
@@ -77,9 +83,9 @@ impl Handler<Connect> for ChatHub {
             Some(conv_id) => {
                 self.conversation_sessions
                     .entry(msg.tenant_id)
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .entry(conv_id)
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .insert(msg.id, msg.addr);
                 tracing::info!(
                     "WS client {} connected to tenant {} conversation {}",

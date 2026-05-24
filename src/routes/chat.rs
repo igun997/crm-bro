@@ -672,6 +672,7 @@ pub async fn send_upload(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn queue_send(
     current: CurrentUser,
     db: &DatabaseConnection,
@@ -817,6 +818,7 @@ async fn active_whatsapp_account_id(
         .ok_or_else(|| "No active WhatsApp account configured".to_string())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn create_queued_message(
     db: &DatabaseConnection,
     tenant_id: i32,
