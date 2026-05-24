@@ -4,6 +4,103 @@
 
 Multi-tenant WhatsApp CRM built with Rust.
 
+## Docker Deployment (Recommended)
+
+### Quick Start with Docker Compose
+
+```bash
+# 1. Create env file
+cat > .env <<'EOF'
+DB_USER=crmbro
+DB_PASSWORD=your-db-password
+DB_NAME=crmbro
+JWT_SECRET=your-jwt-secret-change-me
+APP_BASE_URL=https://crm.yourdomain.com
+STORAGE_BACKEND=local
+
+# First deploy only — remove after initial setup
+ADMIN_EMAIL=admin@yourdomain.com
+ADMIN_PASSWORD=your-secure-admin-password
+ADMIN_NAME=Admin
+EOF
+
+# 2. Start everything
+docker compose up -d
+
+# 3. Check logs
+docker compose logs -f api
+```
+
+On first start the entrypoint will:
+1. Wait for MariaDB to be ready
+2. Run all SQL migrations
+3. Seed the superadmin user (if `ADMIN_EMAIL` + `ADMIN_PASSWORD` are set)
+4. Start the API server
+
+> ⚠️ **Remove `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env` after first deploy** — they're only needed for initial setup.
+
+### Available Commands
+
+The Docker image supports multiple commands:
+
+| Command | Description |
+|---------|-------------|
+| `api` (default) | Run migrations + seed admin + start API server |
+| `worker` | Start the outbox message worker |
+| `seed` | Run migrations + seed admin only (no server) |
+| `migrate` | Run migrations only |
+
+```bash
+# Run worker separately
+docker run --env-file .env ghcr.io/igun997/crm-bro:latest worker
+
+# Seed admin manually
+docker run --env-file .env \
+  -e ADMIN_EMAIL=admin@example.com \
+  -e ADMIN_PASSWORD=changeme \
+  ghcr.io/igun997/crm-bro:latest seed
+```
+
+### Docker Image Tags
+
+| Tag | Description |
+|-----|-------------|
+| `latest` | Latest stable release |
+| `0.1.0` | Specific version |
+| `0.1` | Latest patch in minor |
+| `0.1.0-alpha.1` | Pre-release (not tagged as `latest`) |
+
+### Production with R2/S3 Storage
+
+```bash
+# Add to .env
+STORAGE_BACKEND=r2
+R2_ENDPOINT=https://your-account.r2.cloudflarestorage.com
+R2_ACCESS_KEY_ID=your-key
+R2_SECRET_ACCESS_KEY=your-secret
+R2_BUCKET=crm-media
+R2_PUBLIC_BASE_URL=https://cdn.yourdomain.com
+```
+
+### Environment Variables Reference
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `DATABASE_URL` | Yes | — | MySQL/MariaDB connection string |
+| `JWT_SECRET` | Yes | — | JWT signing secret |
+| `APP_BASE_URL` | Yes | `http://localhost:8080` | Public URL of the API |
+| `STORAGE_BACKEND` | No | `local` | `local` or `r2` |
+| `STORAGE_LOCAL_DIR` | No | `media` | Local media directory |
+| `R2_ENDPOINT` | If R2 | — | R2/S3 endpoint URL |
+| `R2_ACCESS_KEY_ID` | If R2 | — | R2/S3 access key |
+| `R2_SECRET_ACCESS_KEY` | If R2 | — | R2/S3 secret key |
+| `R2_BUCKET` | If R2 | — | R2/S3 bucket name |
+| `R2_PUBLIC_BASE_URL` | No | — | CDN URL for media |
+| `ADMIN_EMAIL` | No | — | Seed admin email (first deploy) |
+| `ADMIN_PASSWORD` | No | — | Seed admin password (first deploy) |
+| `ADMIN_NAME` | No | `Admin` | Seed admin display name |
+| `RUST_LOG` | No | `info` | Log level |
+
 ## Stack
 
 - **Runtime:** Rust (Actix-web)
@@ -94,6 +191,11 @@ make lint         # Clippy
 - `POST /api/settings/whatsapp` — Create settings
 - `PATCH /api/settings/whatsapp/{id}` — Update settings
 
+### Storage Settings
+- `GET /api/settings/storage` — Get storage config
+- `POST /api/settings/storage` — Create storage config
+- `PATCH /api/settings/storage` — Update storage config
+
 ### Contacts & Tags
 - `GET /api/contacts` — List contacts (filterable)
 - `GET /api/contacts/{id}` — Get contact
@@ -122,7 +224,7 @@ make lint         # Clippy
 
 ## Environment Variables
 
-See [`.env.example`](.env.example) for all configuration options.
+See [Docker Deployment](#docker-deployment-recommended) for full variable reference, or [`.env.example`](.env.example) for a minimal template.
 
 ## Architecture
 
@@ -152,6 +254,21 @@ src/
 migrations/        # SQL migrations
 static/            # Dev chat UI
 ```
+
+## Releases
+
+Pushing a `v*` tag triggers:
+1. Full CI (check, lint, test, build)
+2. Docker image build → `ghcr.io/igun997/crm-bro`
+3. GitHub Release with auto-generated changelog
+
+```bash
+# Create a release
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Pre-release tags (`-alpha`, `-beta`, `-rc`) are marked as pre-release and NOT tagged as `latest`.
 
 ## License
 
