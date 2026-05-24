@@ -8,6 +8,7 @@ pub mod role;
 pub mod role_permission;
 pub mod tag;
 pub mod tenant;
+pub mod tenant_storage_config;
 pub mod tenant_whatsapp_account;
 pub mod user;
 pub mod user_role;
