@@ -7,6 +7,8 @@ use object_store::path::Path as ObjectPath;
 use object_store::{Attribute, AttributeValue, Attributes, ObjectStore, PutOptions};
 
 use crate::config::AppConfig;
+use crate::models::tenant_storage_config;
+use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 #[derive(Clone)]
 pub struct StorageService {
@@ -30,6 +32,18 @@ pub struct StoredObject {
     pub url: String,
     pub size_bytes: usize,
     pub mime_type: String,
+}
+
+/// Lightweight struct for building tenant-specific storage.
+/// Populated from `tenant_storage_configs` DB row.
+#[derive(Debug, Clone)]
+pub struct TenantStorageConfig {
+    pub endpoint: String,
+    pub region: String,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub bucket: String,
+    pub public_base_url: Option<String>,
 }
 
 impl StorageService {
@@ -61,6 +75,52 @@ impl StorageService {
                 })
             }
             other => Err(format!("Unsupported STORAGE_BACKEND: {other}")),
+        }
+    }
+
+    /// Build tenant-specific R2/S3 storage from DB config.
+    pub fn for_tenant(config: &TenantStorageConfig) -> Result<Self, String> {
+        let store = AmazonS3Builder::new()
+            .with_endpoint(&config.endpoint)
+            .with_region(&config.region)
+            .with_access_key_id(&config.access_key_id)
+            .with_secret_access_key(&config.secret_access_key)
+            .with_bucket_name(&config.bucket)
+            .build()
+            .map_err(|error| format!("Failed to build tenant storage: {error}"))?;
+        Ok(Self {
+            backend: StorageBackend::R2 {
+                store: Arc::new(store),
+                public_base_url: config.public_base_url.clone(),
+            },
+        })
+    }
+
+    /// Resolve storage for a tenant: use tenant config if exists + active, else return None (caller uses global).
+    pub async fn resolve_for_tenant(
+        db: &DatabaseConnection,
+        tenant_id: i32,
+    ) -> Result<Option<Self>, String> {
+        let config = tenant_storage_config::Entity::find()
+            .filter(tenant_storage_config::Column::TenantId.eq(tenant_id))
+            .filter(tenant_storage_config::Column::IsActive.eq(true))
+            .one(db)
+            .await
+            .map_err(|error| format!("DB lookup tenant storage config: {error}"))?;
+
+        match config {
+            Some(row) => {
+                let tenant_config = TenantStorageConfig {
+                    endpoint: row.endpoint,
+                    region: row.region,
+                    access_key_id: row.access_key_id,
+                    secret_access_key: row.secret_access_key,
+                    bucket: row.bucket,
+                    public_base_url: row.public_base_url,
+                };
+                Ok(Some(Self::for_tenant(&tenant_config)?))
+            }
+            None => Ok(None),
         }
     }
 
@@ -220,5 +280,37 @@ mod tests {
             Err(error) => error,
         };
         assert!(error.contains("R2_ENDPOINT"));
+    }
+
+    #[test]
+    fn for_tenant_builds_r2_backend() {
+        let config = TenantStorageConfig {
+            endpoint: "https://abc.r2.cloudflarestorage.com".to_string(),
+            region: "auto".to_string(),
+            access_key_id: "AKID".to_string(),
+            secret_access_key: "SECRET".to_string(),
+            bucket: "test-bucket".to_string(),
+            public_base_url: Some("https://cdn.example.com".to_string()),
+        };
+        let service = StorageService::for_tenant(&config).unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let url = rt.block_on(service.get_url("test/file.jpg")).unwrap();
+        assert_eq!(url, "https://cdn.example.com/test/file.jpg");
+    }
+
+    #[test]
+    fn for_tenant_without_public_url_returns_key() {
+        let config = TenantStorageConfig {
+            endpoint: "https://abc.r2.cloudflarestorage.com".to_string(),
+            region: "auto".to_string(),
+            access_key_id: "AKID".to_string(),
+            secret_access_key: "SECRET".to_string(),
+            bucket: "test-bucket".to_string(),
+            public_base_url: None,
+        };
+        let service = StorageService::for_tenant(&config).unwrap();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let url = rt.block_on(service.get_url("test/file.jpg")).unwrap();
+        assert_eq!(url, "test/file.jpg");
     }
 }
