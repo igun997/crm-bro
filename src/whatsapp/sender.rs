@@ -2,7 +2,6 @@
 use reqwest::Client;
 use reqwest::multipart;
 
-use crate::config::AppConfig;
 use super::types::*;
 
 pub struct WhatsAppSender {
@@ -12,18 +11,6 @@ pub struct WhatsAppSender {
 }
 
 impl WhatsAppSender {
-    pub fn new(config: &AppConfig) -> Self {
-        let base_url = format!(
-            "https://graph.facebook.com/{}/{}/messages",
-            config.wa_api_version, config.wa_phone_number_id
-        );
-        Self {
-            client: Client::new(),
-            base_url,
-            access_token: config.wa_access_token.clone(),
-        }
-    }
-
     pub fn from_parts(api_version: &str, phone_number_id: &str, access_token: &str) -> Self {
         let base_url = format!(
             "https://graph.facebook.com/{}/{}/messages",

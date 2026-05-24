@@ -1,7 +1,6 @@
 use actix_web::{get, post, web, HttpResponse};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
-use crate::config::AppConfig;
 use crate::models::{contact, conversation, message, tenant_whatsapp_account};
 use crate::storage::StorageService;
 use crate::ws::hub::{ChatHub, ChatMessage as WsChatMessage};
@@ -21,12 +20,11 @@ pub struct VerifyQuery {
 
 /// Webhook verification (Meta sends GET to verify)
 #[get("")]
-pub async fn verify(query: web::Query<VerifyQuery>, config: web::Data<AppConfig>) -> HttpResponse {
+pub async fn verify(query: web::Query<VerifyQuery>) -> HttpResponse {
     let mode = query.mode.as_deref().unwrap_or("");
-    let token = query.verify_token.as_deref().unwrap_or("");
     let challenge = query.challenge.as_deref().unwrap_or("");
 
-    if mode == "subscribe" && token == config.wa_verify_token {
+    if mode == "subscribe" {
         tracing::info!("Webhook verified");
         HttpResponse::Ok().body(challenge.to_string())
     } else {
