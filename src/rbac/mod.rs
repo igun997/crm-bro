@@ -11,6 +11,7 @@ pub mod permissions {
     pub const TAGS_READ: &str = "tags.read";
     pub const TAGS_WRITE: &str = "tags.write";
     pub const SETTINGS_WHATSAPP_MANAGE: &str = "settings.whatsapp.manage";
+    pub const SETTINGS_STORAGE_MANAGE: &str = "settings.storage.manage";
     pub const ADMIN_TENANTS_MANAGE: &str = "admin.tenants.manage";
     pub const ADMIN_USERS_MANAGE: &str = "admin.users.manage";
 }
@@ -69,6 +70,10 @@ pub const PERMISSIONS: &[PermissionDef] = &[
         description: "Manage WhatsApp account settings",
     },
     PermissionDef {
+        code: permissions::SETTINGS_STORAGE_MANAGE,
+        description: "Manage tenant storage configuration",
+    },
+    PermissionDef {
         code: permissions::ADMIN_TENANTS_MANAGE,
         description: "Create and manage tenants",
     },
@@ -90,6 +95,7 @@ pub const SUPERADMIN_ROLE: RoleDef = RoleDef {
         permissions::TAGS_READ,
         permissions::TAGS_WRITE,
         permissions::SETTINGS_WHATSAPP_MANAGE,
+        permissions::SETTINGS_STORAGE_MANAGE,
         permissions::ADMIN_TENANTS_MANAGE,
         permissions::ADMIN_USERS_MANAGE,
     ],
@@ -108,6 +114,7 @@ pub const TENANT_ADMIN_ROLE: RoleDef = RoleDef {
         permissions::TAGS_READ,
         permissions::TAGS_WRITE,
         permissions::SETTINGS_WHATSAPP_MANAGE,
+        permissions::SETTINGS_STORAGE_MANAGE,
         permissions::ADMIN_USERS_MANAGE,
     ],
 };

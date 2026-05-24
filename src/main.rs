@@ -29,7 +29,8 @@ use routes::contacts::{
 };
 use routes::health::HealthResponse;
 use routes::settings::{
-    PatchWhatsAppAccountRequest, UpsertWhatsAppAccountRequest, WhatsAppAccountResponse,
+    CreateStorageConfigRequest, PatchStorageConfigRequest, PatchWhatsAppAccountRequest,
+    StorageConfigResponse, UpsertWhatsAppAccountRequest, WhatsAppAccountResponse,
 };
 
 #[derive(OpenApi)]
@@ -52,6 +53,9 @@ use routes::settings::{
         routes::settings::list_whatsapp_accounts,
         routes::settings::create_whatsapp_account,
         routes::settings::update_whatsapp_account,
+        routes::settings::get_storage_config,
+        routes::settings::create_storage_config,
+        routes::settings::update_storage_config,
         routes::contacts::list_contacts,
         routes::contacts::get_contact,
         routes::contacts::update_contact,
@@ -73,6 +77,7 @@ use routes::settings::{
         PatchUserRequest, ResetPasswordRequest, AssignRoleRequest,
         RoleResponse, CreateRoleRequest, PatchRoleRequest, PermissionResponse,
         WhatsAppAccountResponse, UpsertWhatsAppAccountRequest, PatchWhatsAppAccountRequest,
+        StorageConfigResponse, CreateStorageConfigRequest, PatchStorageConfigRequest,
         ContactResponse, TagResponse, PaginatedContacts, PatchContactRequest, CreateTagRequest,
         AttachTagRequest,
         ConversationResponse, MessageResponse,

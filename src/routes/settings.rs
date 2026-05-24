@@ -7,7 +7,7 @@ use utoipa::ToSchema;
 
 use crate::auth::CurrentUser;
 use crate::config::AppConfig;
-use crate::models::{tenant, tenant_whatsapp_account};
+use crate::models::{tenant, tenant_storage_config, tenant_whatsapp_account};
 use crate::rbac::{permissions, require_permission};
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -65,6 +65,60 @@ pub struct PatchWhatsAppAccountRequest {
     pub access_token: Option<String>,
     pub verify_token: Option<String>,
     pub api_version: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+#[schema(example = json!({
+    "id": 1, "tenant_id": 1,
+    "endpoint": "https://abc123.r2.cloudflarestorage.com",
+    "region": "auto",
+    "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+    "secret_access_key_masked": "wJal...9kLm",
+    "bucket": "acme-crm-media",
+    "public_base_url": "https://cdn.acme.com",
+    "is_active": true
+}))]
+pub struct StorageConfigResponse {
+    pub id: i32,
+    pub tenant_id: i32,
+    pub endpoint: String,
+    pub region: String,
+    pub access_key_id: String,
+    pub secret_access_key_masked: String,
+    pub bucket: String,
+    pub public_base_url: Option<String>,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({
+    "endpoint": "https://abc123.r2.cloudflarestorage.com",
+    "region": "auto",
+    "access_key_id": "AKIAIOSFODNN7EXAMPLE",
+    "secret_access_key": "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+    "bucket": "acme-crm-media",
+    "public_base_url": "https://cdn.acme.com"
+}))]
+pub struct CreateStorageConfigRequest {
+    pub endpoint: String,
+    pub region: Option<String>,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub bucket: String,
+    pub public_base_url: Option<String>,
+    pub is_active: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+#[schema(example = json!({"bucket": "new-bucket", "is_active": true}))]
+pub struct PatchStorageConfigRequest {
+    pub endpoint: Option<String>,
+    pub region: Option<String>,
+    pub access_key_id: Option<String>,
+    pub secret_access_key: Option<String>,
+    pub bucket: Option<String>,
+    pub public_base_url: Option<String>,
     pub is_active: Option<bool>,
 }
 
@@ -275,6 +329,159 @@ pub async fn update_whatsapp_account(
     }
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/settings/storage",
+    responses((status = 200, description = "Storage config", body = StorageConfigResponse),
+              (status = 404, description = "No storage config")),
+    tag = "Settings"
+)]
+#[get("/settings/storage")]
+pub async fn get_storage_config(
+    current: CurrentUser,
+    db: web::Data<DatabaseConnection>,
+) -> HttpResponse {
+    let ctx = &current.0;
+    if let Err(response) = require_permission(ctx, permissions::SETTINGS_STORAGE_MANAGE) {
+        return response;
+    }
+    let Some(tenant_id) = ctx.tenant_id else {
+        return forbidden("Tenant context required");
+    };
+
+    match tenant_storage_config::Entity::find()
+        .filter(tenant_storage_config::Column::TenantId.eq(tenant_id))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(config)) => HttpResponse::Ok().json(build_storage_config_response(&config)),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "success": false,
+            "error": "Storage configuration not found"
+        })),
+        Err(error) => {
+            tracing::error!(%error, "Failed to load storage config");
+            server_error("Failed to load storage configuration")
+        }
+    }
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/settings/storage",
+    request_body = CreateStorageConfigRequest,
+    responses((status = 200, description = "Storage config created", body = StorageConfigResponse)),
+    tag = "Settings"
+)]
+#[post("/settings/storage")]
+pub async fn create_storage_config(
+    current: CurrentUser,
+    db: web::Data<DatabaseConnection>,
+    body: web::Json<CreateStorageConfigRequest>,
+) -> HttpResponse {
+    let ctx = &current.0;
+    if let Err(response) = require_permission(ctx, permissions::SETTINGS_STORAGE_MANAGE) {
+        return response;
+    }
+    let Some(tenant_id) = ctx.tenant_id else {
+        return forbidden("Tenant context required");
+    };
+
+    let model = tenant_storage_config::ActiveModel {
+        tenant_id: Set(tenant_id),
+        endpoint: Set(body.endpoint.clone()),
+        region: Set(body.region.clone().unwrap_or_else(|| "auto".to_string())),
+        access_key_id: Set(body.access_key_id.clone()),
+        secret_access_key: Set(body.secret_access_key.clone()),
+        bucket: Set(body.bucket.clone()),
+        public_base_url: Set(body.public_base_url.clone()),
+        is_active: Set(body.is_active.unwrap_or(true)),
+        ..Default::default()
+    };
+
+    match model.insert(db.get_ref()).await {
+        Ok(config) => HttpResponse::Ok().json(build_storage_config_response(&config)),
+        Err(error) => {
+            tracing::error!(%error, "Failed to create storage config");
+            HttpResponse::Conflict().json(serde_json::json!({
+                "success": false,
+                "error": "Failed to create storage configuration (may already exist)"
+            }))
+        }
+    }
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/settings/storage",
+    request_body = PatchStorageConfigRequest,
+    responses((status = 200, description = "Storage config updated", body = StorageConfigResponse)),
+    tag = "Settings"
+)]
+#[patch("/settings/storage")]
+pub async fn update_storage_config(
+    current: CurrentUser,
+    db: web::Data<DatabaseConnection>,
+    body: web::Json<PatchStorageConfigRequest>,
+) -> HttpResponse {
+    let ctx = &current.0;
+    if let Err(response) = require_permission(ctx, permissions::SETTINGS_STORAGE_MANAGE) {
+        return response;
+    }
+    let Some(tenant_id) = ctx.tenant_id else {
+        return forbidden("Tenant context required");
+    };
+
+    let config = match tenant_storage_config::Entity::find()
+        .filter(tenant_storage_config::Column::TenantId.eq(tenant_id))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(config)) => config,
+        Ok(None) => {
+            return HttpResponse::NotFound().json(serde_json::json!({
+                "success": false,
+                "error": "Storage configuration not found"
+            }));
+        }
+        Err(error) => {
+            tracing::error!(%error, "Failed to load storage config");
+            return server_error("Failed to load storage configuration");
+        }
+    };
+
+    let mut active: tenant_storage_config::ActiveModel = config.into();
+    if let Some(value) = &body.endpoint {
+        active.endpoint = Set(value.clone());
+    }
+    if let Some(value) = &body.region {
+        active.region = Set(value.clone());
+    }
+    if let Some(value) = &body.access_key_id {
+        active.access_key_id = Set(value.clone());
+    }
+    if let Some(value) = &body.secret_access_key {
+        active.secret_access_key = Set(value.clone());
+    }
+    if let Some(value) = &body.bucket {
+        active.bucket = Set(value.clone());
+    }
+    if let Some(value) = &body.public_base_url {
+        active.public_base_url = Set(Some(value.clone()));
+    }
+    if let Some(value) = body.is_active {
+        active.is_active = Set(value);
+    }
+
+    match active.update(db.get_ref()).await {
+        Ok(config) => HttpResponse::Ok().json(build_storage_config_response(&config)),
+        Err(error) => {
+            tracing::error!(%error, "Failed to update storage config");
+            server_error("Failed to update storage configuration")
+        }
+    }
+}
+
 pub fn mask_token(token: &str) -> String {
     let chars = token.chars().collect::<Vec<_>>();
     if chars.len() <= 8 {
@@ -309,6 +516,20 @@ fn build_account_response(
     }
 }
 
+fn build_storage_config_response(row: &tenant_storage_config::Model) -> StorageConfigResponse {
+    StorageConfigResponse {
+        id: row.id,
+        tenant_id: row.tenant_id,
+        endpoint: row.endpoint.clone(),
+        region: row.region.clone(),
+        access_key_id: row.access_key_id.clone(),
+        secret_access_key_masked: mask_token(&row.secret_access_key),
+        bucket: row.bucket.clone(),
+        public_base_url: row.public_base_url.clone(),
+        is_active: row.is_active,
+    }
+}
+
 fn forbidden(message: &str) -> HttpResponse {
     HttpResponse::Forbidden().json(serde_json::json!({
         "success": false,
@@ -326,7 +547,10 @@ fn server_error(message: &str) -> HttpResponse {
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(list_whatsapp_accounts)
         .service(create_whatsapp_account)
-        .service(update_whatsapp_account);
+        .service(update_whatsapp_account)
+        .service(get_storage_config)
+        .service(create_storage_config)
+        .service(update_storage_config);
 }
 
 #[cfg(test)]
