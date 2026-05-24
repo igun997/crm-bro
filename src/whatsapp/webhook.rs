@@ -9,6 +9,11 @@ use super::media;
 use super::types::*;
 
 #[derive(serde::Deserialize)]
+pub struct WebhookPath {
+    pub tenant_slug: String,
+}
+
+#[derive(serde::Deserialize)]
 pub struct VerifyQuery {
     #[serde(rename = "hub.mode")]
     pub mode: Option<String>,
@@ -19,28 +24,80 @@ pub struct VerifyQuery {
 }
 
 /// Webhook verification (Meta sends GET to verify)
-#[get("")]
-pub async fn verify(query: web::Query<VerifyQuery>) -> HttpResponse {
+#[get("/{tenant_slug}")]
+pub async fn verify(
+    path: web::Path<WebhookPath>,
+    query: web::Query<VerifyQuery>,
+    db: web::Data<DatabaseConnection>,
+) -> HttpResponse {
     let mode = query.mode.as_deref().unwrap_or("");
+    let token = query.verify_token.as_deref().unwrap_or("");
     let challenge = query.challenge.as_deref().unwrap_or("");
 
-    if mode == "subscribe" {
-        tracing::info!("Webhook verified");
-        HttpResponse::Ok().body(challenge.to_string())
-    } else {
-        tracing::warn!("Webhook verification failed");
-        HttpResponse::Forbidden().finish()
+    if mode != "subscribe" {
+        return HttpResponse::Forbidden().finish();
     }
+
+    // Look up tenant by slug
+    let tenant = match crate::models::tenant::Entity::find()
+        .filter(crate::models::tenant::Column::Slug.eq(&path.tenant_slug))
+        .filter(crate::models::tenant::Column::IsActive.eq(true))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(t)) => t,
+        _ => {
+            tracing::warn!(slug = %path.tenant_slug, "Webhook verify: tenant not found");
+            return HttpResponse::Forbidden().finish();
+        }
+    };
+
+    // Look up tenant WhatsApp account
+    let account = match tenant_whatsapp_account::Entity::find()
+        .filter(tenant_whatsapp_account::Column::TenantId.eq(tenant.id))
+        .filter(tenant_whatsapp_account::Column::IsActive.eq(true))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(a)) => a,
+        _ => {
+            tracing::warn!(tenant_id = tenant.id, "Webhook verify: no WA account");
+            return HttpResponse::Forbidden().finish();
+        }
+    };
+
+    if token != account.verify_token {
+        tracing::warn!(slug = %path.tenant_slug, "Webhook verify: token mismatch");
+        return HttpResponse::Forbidden().finish();
+    }
+
+    tracing::info!(slug = %path.tenant_slug, "Webhook verified");
+    HttpResponse::Ok().body(challenge.to_string())
 }
 
 /// Receive messages/status updates from Meta
-#[post("")]
+#[post("/{tenant_slug}")]
 pub async fn receive(
+    path: web::Path<WebhookPath>,
     body: web::Json<WebhookPayload>,
     db: web::Data<DatabaseConnection>,
     storage: web::Data<StorageService>,
     hub: web::Data<actix::Addr<ChatHub>>,
 ) -> HttpResponse {
+    // Look up tenant by slug — return 200 to Meta even if not found
+    let tenant = match crate::models::tenant::Entity::find()
+        .filter(crate::models::tenant::Column::Slug.eq(&path.tenant_slug))
+        .filter(crate::models::tenant::Column::IsActive.eq(true))
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(t)) => t,
+        _ => {
+            tracing::warn!(slug = %path.tenant_slug, "Webhook receive: tenant not found, skipping");
+            return HttpResponse::Ok().finish();
+        }
+    };
+
     for entry in &body.entry {
         for change in &entry.changes {
             if change.field != "messages" {
@@ -60,6 +117,16 @@ pub async fn receive(
                     continue;
                 }
             };
+
+            // Cross-check that the resolved account belongs to the correct tenant
+            if account.tenant_id != tenant.id {
+                tracing::warn!(
+                    slug = %path.tenant_slug,
+                    account_tenant = account.tenant_id,
+                    "Webhook phone_number_id does not match tenant slug"
+                );
+                continue;
+            }
 
             if let Some(messages) = &change.value.messages {
                 for msg in messages {
