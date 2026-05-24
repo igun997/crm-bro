@@ -1,4 +1,4 @@
-use actix_web::{web, HttpResponse, get};
+use actix_web::{get, web, HttpResponse};
 use sea_orm::DatabaseConnection;
 use serde::Serialize;
 use utoipa::ToSchema;
@@ -28,7 +28,11 @@ pub async fn health_check(db: web::Data<DatabaseConnection>) -> HttpResponse {
 
     let healthy = db_status == "connected";
     let resp = HealthResponse {
-        status: if healthy { "ok".into() } else { "degraded".into() },
+        status: if healthy {
+            "ok".into()
+        } else {
+            "degraded".into()
+        },
         database: db_status,
     };
 

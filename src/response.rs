@@ -1,7 +1,7 @@
 #![allow(dead_code)]
+use actix_web::HttpResponse;
 use serde::Serialize;
 use utoipa::ToSchema;
-use actix_web::HttpResponse;
 
 /// Standard API response wrapper
 #[derive(Debug, Serialize, ToSchema)]
@@ -78,11 +78,19 @@ pub fn not_found(message: &str) -> HttpResponse {
 }
 
 pub fn bad_request(message: &str) -> HttpResponse {
-    err(actix_web::http::StatusCode::BAD_REQUEST, "BAD_REQUEST", message)
+    err(
+        actix_web::http::StatusCode::BAD_REQUEST,
+        "BAD_REQUEST",
+        message,
+    )
 }
 
 pub fn unauthorized(message: &str) -> HttpResponse {
-    err(actix_web::http::StatusCode::UNAUTHORIZED, "UNAUTHORIZED", message)
+    err(
+        actix_web::http::StatusCode::UNAUTHORIZED,
+        "UNAUTHORIZED",
+        message,
+    )
 }
 
 pub fn paginated<T: Serialize>(data: Vec<T>, page: u64, per_page: u64, total: u64) -> HttpResponse {

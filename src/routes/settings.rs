@@ -146,7 +146,11 @@ pub async fn create_whatsapp_account(
     };
 
     match model.insert(db.get_ref()).await {
-        Ok(account) => HttpResponse::Ok().json(build_account_response(&account, &tenant.slug, &config.app_base_url)),
+        Ok(account) => HttpResponse::Ok().json(build_account_response(
+            &account,
+            &tenant.slug,
+            &config.app_base_url,
+        )),
         Err(error) => {
             tracing::error!(%error, "Failed to create WhatsApp account");
             HttpResponse::Conflict().json(serde_json::json!({
@@ -237,7 +241,11 @@ pub async fn update_whatsapp_account(
     }
 
     match active.update(db.get_ref()).await {
-        Ok(account) => HttpResponse::Ok().json(build_account_response(&account, &tenant.slug, &config.app_base_url)),
+        Ok(account) => HttpResponse::Ok().json(build_account_response(
+            &account,
+            &tenant.slug,
+            &config.app_base_url,
+        )),
         Err(error) => {
             tracing::error!(%error, "Failed to update WhatsApp account");
             server_error("Failed to update WhatsApp settings")
@@ -271,10 +279,13 @@ fn build_account_response(
         verify_token: account.verify_token.clone(),
         api_version: account.api_version.clone(),
         is_active: account.is_active,
-        webhook_url: format!("{}/webhook/whatsapp/{}", app_base_url.trim_end_matches('/'), tenant_slug),
+        webhook_url: format!(
+            "{}/webhook/whatsapp/{}",
+            app_base_url.trim_end_matches('/'),
+            tenant_slug
+        ),
     }
 }
-
 
 fn forbidden(message: &str) -> HttpResponse {
     HttpResponse::Forbidden().json(serde_json::json!({

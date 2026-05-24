@@ -3,11 +3,11 @@ use std::time::Duration;
 use crm_bro::config::AppConfig;
 use crm_bro::models::{message, outbox_message, tenant_whatsapp_account};
 use crm_bro::whatsapp::sender::WhatsAppSender;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set, TransactionTrait,
-};
 use sea_orm::sea_query::Expr;
+use sea_orm::{
+    ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set, TransactionTrait,
+};
 use serde_json::Value;
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -132,7 +132,8 @@ async fn load_account(
     tenant_id: i32,
     account_id: Option<i32>,
 ) -> Result<tenant_whatsapp_account::Model, String> {
-    let account_id = account_id.ok_or_else(|| "Missing whatsapp_account_id in outbox payload".to_string())?;
+    let account_id =
+        account_id.ok_or_else(|| "Missing whatsapp_account_id in outbox payload".to_string())?;
     tenant_whatsapp_account::Entity::find()
         .filter(tenant_whatsapp_account::Column::TenantId.eq(tenant_id))
         .filter(tenant_whatsapp_account::Column::IsActive.eq(true))
@@ -154,7 +155,9 @@ async fn send_job(sender: &WhatsAppSender, payload: &Value) -> Result<String, St
             let to = required_str(payload, "to")?;
             let template_name = required_str(payload, "template_name")?;
             let language = required_str(payload, "language")?;
-            sender.send_template(to, template_name, language, None).await
+            sender
+                .send_template(to, template_name, language, None)
+                .await
         }
         Some("media") => {
             let to = required_str(payload, "to")?;
@@ -215,8 +218,8 @@ async fn mark_failure(
     let attempts = job.attempts + 1;
     let terminal = attempts >= MAX_ATTEMPTS;
     let status = if terminal { "failed" } else { "pending" };
-    let next_attempt_at = chrono::Utc::now().naive_utc()
-        + chrono::Duration::seconds(retry_delay_seconds(attempts));
+    let next_attempt_at =
+        chrono::Utc::now().naive_utc() + chrono::Duration::seconds(retry_delay_seconds(attempts));
 
     let mut job_update: outbox_message::ActiveModel = job.into();
     job_update.status = Set(status.to_string());
@@ -248,8 +251,8 @@ async fn mark_job_failure(
     let attempts = job.attempts + 1;
     let terminal = attempts >= MAX_ATTEMPTS;
     let status = if terminal { "failed" } else { "pending" };
-    let next_attempt_at = chrono::Utc::now().naive_utc()
-        + chrono::Duration::seconds(retry_delay_seconds(attempts));
+    let next_attempt_at =
+        chrono::Utc::now().naive_utc() + chrono::Duration::seconds(retry_delay_seconds(attempts));
 
     let mut job_update: outbox_message::ActiveModel = job.into();
     job_update.status = Set(status.to_string());
@@ -313,6 +316,9 @@ mod tests {
     fn required_str_reads_string_field() {
         let payload = serde_json::json!({"to":"628"});
         assert_eq!(required_str(&payload, "to"), Ok("628"));
-        assert_eq!(required_str(&payload, "missing"), Err("Missing payload field: missing".to_string()));
+        assert_eq!(
+            required_str(&payload, "missing"),
+            Err("Missing payload field: missing".to_string())
+        );
     }
 }

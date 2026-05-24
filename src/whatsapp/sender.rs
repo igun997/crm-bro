@@ -1,6 +1,6 @@
 #![allow(dead_code)]
-use reqwest::Client;
 use reqwest::multipart;
+use reqwest::Client;
 
 use super::types::*;
 
@@ -53,7 +53,9 @@ impl WhatsAppSender {
             msg_type: "template".into(),
             template: TemplateBody {
                 name: template_name.into(),
-                language: TemplateLanguage { code: language.into() },
+                language: TemplateLanguage {
+                    code: language.into(),
+                },
                 components,
             },
         };
@@ -77,17 +79,34 @@ impl WhatsAppSender {
             messaging_product: "whatsapp".into(),
             to: to.into(),
             msg_type: media_type.into(),
-            image: if media_type == "image" { Some(media_payload.clone()) } else { None },
-            document: if media_type == "document" { Some(media_payload.clone()) } else { None },
-            audio: if media_type == "audio" { Some(media_payload.clone()) } else { None },
-            video: if media_type == "video" { Some(media_payload) } else { None },
+            image: if media_type == "image" {
+                Some(media_payload.clone())
+            } else {
+                None
+            },
+            document: if media_type == "document" {
+                Some(media_payload.clone())
+            } else {
+                None
+            },
+            audio: if media_type == "audio" {
+                Some(media_payload.clone())
+            } else {
+                None
+            },
+            video: if media_type == "video" {
+                Some(media_payload)
+            } else {
+                None
+            },
         };
 
         self.post_message(&payload).await
     }
 
     async fn post_message<T: serde::Serialize>(&self, payload: &T) -> Result<String, String> {
-        let resp = self.client
+        let resp = self
+            .client
             .post(&self.base_url)
             .bearer_auth(&self.access_token)
             .json(payload)
@@ -135,7 +154,8 @@ impl WhatsAppSender {
             .text("type", mime_type.to_string())
             .part("file", file_part);
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&self.media_url)
             .bearer_auth(&self.access_token)
             .multipart(form)
@@ -148,16 +168,25 @@ impl WhatsAppSender {
             return Err(format!("Upload error: {}", body));
         }
 
-        let json: serde_json::Value = resp.json().await
+        let json: serde_json::Value = resp
+            .json()
+            .await
             .map_err(|e| format!("Parse upload response: {}", e))?;
 
-        json["id"].as_str()
+        json["id"]
+            .as_str()
             .map(|s| s.to_string())
             .ok_or_else(|| "No media ID in upload response".into())
     }
 
     /// Send media using uploaded media_id
-    pub async fn send_media_by_id(&self, to: &str, media_type: &str, media_id: &str, caption: Option<&str>) -> Result<String, String> {
+    pub async fn send_media_by_id(
+        &self,
+        to: &str,
+        media_type: &str,
+        media_id: &str,
+        caption: Option<&str>,
+    ) -> Result<String, String> {
         let media_obj = serde_json::json!({
             "id": media_id,
             "caption": caption

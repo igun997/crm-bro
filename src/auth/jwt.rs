@@ -1,4 +1,6 @@
-use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, TokenData, Validation, Algorithm};
+use jsonwebtoken::{
+    decode, encode, Algorithm, DecodingKey, EncodingKey, Header, TokenData, Validation,
+};
 use serde::{Deserialize, Serialize};
 
 /// JWT claims used across the application.
@@ -27,7 +29,10 @@ pub fn encode_jwt(claims: &Claims, secret: &str) -> Result<String, jsonwebtoken:
 
 /// Decode and validate a JWT string, returning the inner `Claims`.
 /// Validates signature and expiry using explicit HS256.
-pub fn decode_jwt(token: &str, secret: &str) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
+pub fn decode_jwt(
+    token: &str,
+    secret: &str,
+) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.leeway = 0;
     decode::<Claims>(
@@ -90,7 +95,10 @@ mod tests {
         let claims = build_claims(1, None, false, 3600);
         let token = encode_jwt(&claims, SECRET).expect("encode");
         let result = decode_jwt(&token, WRONG_SECRET);
-        assert!(result.is_err(), "token signed with different secret must be rejected");
+        assert!(
+            result.is_err(),
+            "token signed with different secret must be rejected"
+        );
     }
 
     #[test]

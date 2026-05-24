@@ -94,7 +94,10 @@ impl StorageService {
                 let size_bytes = bytes.len();
                 let path = ObjectPath::from(key);
                 let mut attributes = Attributes::new();
-                attributes.insert(Attribute::ContentType, AttributeValue::from(mime_type.to_string()));
+                attributes.insert(
+                    Attribute::ContentType,
+                    AttributeValue::from(mime_type.to_string()),
+                );
                 store
                     .put_opts(&path, bytes.into(), PutOptions::from(attributes))
                     .await

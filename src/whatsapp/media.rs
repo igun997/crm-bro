@@ -7,7 +7,12 @@ pub struct DownloadedMediaBytes {
     pub mime_type: String,
 }
 
-pub async fn get_media_url_with_token(client: &Client, api_version: &str, access_token: &str, media_id: &str) -> Result<String, String> {
+pub async fn get_media_url_with_token(
+    client: &Client,
+    api_version: &str,
+    access_token: &str,
+    media_id: &str,
+) -> Result<String, String> {
     let url = format!("https://graph.facebook.com/{}/{}", api_version, media_id);
 
     let resp = client
@@ -33,7 +38,11 @@ pub async fn get_media_url_with_token(client: &Client, api_version: &str, access
         .ok_or_else(|| "No URL in media response".into())
 }
 
-pub async fn download_media_binary_with_token(client: &Client, access_token: &str, url: &str) -> Result<(bytes::Bytes, String), String> {
+pub async fn download_media_binary_with_token(
+    client: &Client,
+    access_token: &str,
+    url: &str,
+) -> Result<(bytes::Bytes, String), String> {
     let resp = client
         .get(url)
         .bearer_auth(access_token)
@@ -67,7 +76,8 @@ pub async fn download_bytes(
 ) -> Result<DownloadedMediaBytes, String> {
     let client = Client::new();
     let media_url = get_media_url_with_token(&client, api_version, access_token, media_id).await?;
-    let (bytes, mime_type) = download_media_binary_with_token(&client, access_token, &media_url).await?;
+    let (bytes, mime_type) =
+        download_media_binary_with_token(&client, access_token, &media_url).await?;
     Ok(DownloadedMediaBytes { bytes, mime_type })
 }
 

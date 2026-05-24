@@ -33,14 +33,24 @@ pub enum Relation {
         to = "super::conversation::Column::Id"
     )]
     Conversation,
-    #[sea_orm(belongs_to = "super::tenant::Entity", from = "Column::TenantId", to = "super::tenant::Column::Id")]
+    #[sea_orm(
+        belongs_to = "super::tenant::Entity",
+        from = "Column::TenantId",
+        to = "super::tenant::Column::Id"
+    )]
     Tenant,
-    #[sea_orm(belongs_to = "super::contact::Entity", from = "Column::ContactId", to = "super::contact::Column::Id")]
+    #[sea_orm(
+        belongs_to = "super::contact::Entity",
+        from = "Column::ContactId",
+        to = "super::contact::Column::Id"
+    )]
     Contact,
 }
 
 impl Related<super::conversation::Entity> for Entity {
-    fn to() -> RelationDef { Relation::Conversation.def() }
+    fn to() -> RelationDef {
+        Relation::Conversation.def()
+    }
 }
 
 impl ActiveModelBehavior for ActiveModel {}

@@ -1,11 +1,12 @@
-use actix_web::{dev::ServiceRequest, Error};
 use actix_web::error::ErrorUnauthorized;
+use actix_web::{dev::ServiceRequest, Error};
 
 use crate::auth::jwt::Claims;
 
 #[allow(dead_code)]
 pub async fn validate_token(req: &ServiceRequest, token: &str) -> Result<Claims, Error> {
-    let config = req.app_data::<actix_web::web::Data<crate::config::AppConfig>>()
+    let config = req
+        .app_data::<actix_web::web::Data<crate::config::AppConfig>>()
         .ok_or_else(|| ErrorUnauthorized("Server config missing"))?;
 
     let token_data = crate::auth::jwt::decode_jwt(token, &config.jwt_secret)
