@@ -12,6 +12,10 @@
         .sidebar { width: 350px; border-right: 1px solid #222d34; display: flex; flex-direction: column; }
         .sidebar-header { padding: 16px; background: #202c33; display: flex; align-items: center; justify-content: space-between; }
         .sidebar-header h2 { font-size: 18px; }
+        .settings-box { padding: 10px 12px; background: #1a2730; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid #222d34; }
+        .settings-row { display: flex; gap: 8px; }
+        .settings-box input { width: 100%; padding: 8px 10px; border-radius: 8px; border: 1px solid #2a3942; background: #111b21; color: #e9edef; font-size: 12px; outline: none; }
+        .settings-box button { padding: 8px 10px; border-radius: 8px; border: none; background: #00a884; color: #e9edef; cursor: pointer; font-size: 12px; white-space: nowrap; }
         .search-box { padding: 8px 12px; background: #111b21; }
         .search-box input { width: 100%; padding: 8px 12px; border-radius: 8px; border: none; background: #202c33; color: #e9edef; font-size: 14px; outline: none; }
         .conversations { flex: 1; overflow-y: auto; }
@@ -21,6 +25,8 @@
         .conv-info { flex: 1; min-width: 0; }
         .conv-name { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .conv-last { font-size: 13px; color: #8696a0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .tag-list { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 4px; }
+        .tag-pill { font-size: 10px; padding: 2px 6px; border-radius: 999px; background: #2a3942; color: #cdd6da; }
         .conv-time { font-size: 11px; color: #8696a0; }
 
         /* Chat area */
@@ -63,6 +69,14 @@
             <h2>CRM Bro</h2>
             <span class="ws-status ws-disconnected" id="wsStatus" title="WebSocket status"></span>
         </div>
+        <div class="settings-box">
+            <input type="text" id="apiBaseInput" placeholder="API base URL" value="http://localhost:8080">
+            <input type="password" id="tokenInput" placeholder="JWT token">
+            <div class="settings-row">
+                <button onclick="saveSettings()">Save</button>
+                <button onclick="loginAsAdmin()" title="Dev helper: admin@example.invalid / REDACTED_ADMIN_PASSWORD">Dev Login</button>
+            </div>
+        </div>
         <div class="search-box">
             <input type="text" id="searchInput" placeholder="Search conversations..." oninput="searchConversations()">
         </div>
@@ -98,50 +112,114 @@
     </div>
 
     <script>
-        const API = 'http://localhost:8080';
-        const WS_URL = 'ws://localhost:8080';
+        let API = localStorage.getItem('crmBroApiBase') || 'http://localhost:8080';
+        let token = localStorage.getItem('crmBroJwt') || '';
         let currentConv = null;
         let sendType = 'text';
         let wsGlobal = null;
         let wsChat = null;
+        let contactsByPhone = new Map();
+        let wsGeneration = 0;
+
+        document.getElementById('apiBaseInput').value = API;
+        document.getElementById('tokenInput').value = token;
+
+        function authHeaders(extra = {}) {
+            return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
+        }
+
+        function wsBaseUrl() {
+            return API.replace(/^http/, 'ws');
+        }
+
+        function saveSettings() {
+            API = document.getElementById('apiBaseInput').value.trim() || 'http://localhost:8080';
+            token = document.getElementById('tokenInput').value.trim();
+            localStorage.setItem('crmBroApiBase', API);
+            localStorage.setItem('crmBroJwt', token);
+            loadContacts();
+            loadConversations();
+            connectGlobalWs();
+        }
+
+        async function loginAsAdmin() {
+            API = document.getElementById('apiBaseInput').value.trim() || API;
+            const res = await fetch(`${API}/api/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: 'admin@example.invalid', password: 'REDACTED_ADMIN_PASSWORD' })
+            });
+            const data = await res.json();
+            if (!data.success || !data.token) {
+                alert('Login failed: ' + (data.error || 'Unknown'));
+                return;
+            }
+            token = data.token;
+            document.getElementById('tokenInput').value = token;
+            saveSettings();
+        }
+
+        async function loadContacts() {
+            if (!token) return;
+            try {
+                const res = await fetch(`${API}/api/contacts?per_page=200`, { headers: authHeaders() });
+                const data = await res.json();
+                contactsByPhone = new Map((data.data || []).map(c => [c.phone, c]));
+                renderConversations(window.lastConversations || []);
+            } catch(e) { console.error('Load contacts failed:', e); }
+        }
 
         async function loadConversations() {
             try {
-                const res = await fetch(`${API}/api/chat/conversations?per_page=50`);
+                const res = await fetch(`${API}/api/chat/conversations?per_page=50`, { headers: authHeaders() });
                 const data = await res.json();
-                renderConversations(data.data);
+                window.lastConversations = data.data || [];
+                renderConversations(window.lastConversations);
             } catch(e) { console.error('Load conversations failed:', e); }
         }
 
         function renderConversations(convs) {
             const list = document.getElementById('convList');
-            list.innerHTML = convs.map(c => `
-                <div class="conv-item ${currentConv?.id === c.id ? 'active' : ''}" onclick='selectConversation(${JSON.stringify(c)})'>
-                    <div class="conv-avatar">${(c.contact_name || c.contact_phone)[0].toUpperCase()}</div>
+            convs = convs || [];
+            list.innerHTML = convs.map(c => {
+                const contact = contactsByPhone.get(c.contact_phone);
+                const name = contact?.name || c.contact_name || c.contact_phone;
+                const tags = (contact?.tags || []).map(t => `<span class="tag-pill" style="background:${escapeHtml(t.color || '#2a3942')}">${escapeHtml(t.name)}</span>`).join('');
+                return `
+                <div class="conv-item ${currentConv?.id === c.id ? 'active' : ''}" onclick="selectConversationById(${Number(c.id)})">
+                    <div class="conv-avatar">${escapeHtml(name[0].toUpperCase())}</div>
                     <div class="conv-info">
-                        <div class="conv-name">${c.contact_name || c.contact_phone}</div>
-                        <div class="conv-last">${c.contact_phone}</div>
+                        <div class="conv-name">${escapeHtml(name)}</div>
+                        <div class="conv-last">${escapeHtml(c.contact_phone)}</div>
+                        ${tags ? `<div class="tag-list">${tags}</div>` : ''}
                     </div>
                     <div class="conv-time">${c.last_message_at ? new Date(c.last_message_at).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''}</div>
-                </div>
-            `).join('');
+                </div>`;
+            }).join('');
         }
 
         async function searchConversations() {
             const q = document.getElementById('searchInput').value;
             const params = q ? `?phone=${q}&name=${q}` : '?per_page=50';
             try {
-                const res = await fetch(`${API}/api/chat/conversations${params}`);
+                const res = await fetch(`${API}/api/chat/conversations${params}`, { headers: authHeaders() });
                 const data = await res.json();
-                renderConversations(data.data);
+                window.lastConversations = data.data || [];
+                renderConversations(window.lastConversations);
             } catch(e) {}
+        }
+
+        function selectConversationById(id) {
+            const conv = (window.lastConversations || []).find(c => c.id === id);
+            if (conv) selectConversation(conv);
         }
 
         async function selectConversation(conv) {
             currentConv = conv;
             document.getElementById('emptyState').style.display = 'none';
             document.getElementById('chatView').style.display = 'flex';
-            document.getElementById('chatName').textContent = conv.contact_name || conv.contact_phone;
+            const contact = contactsByPhone.get(conv.contact_phone);
+            document.getElementById('chatName').textContent = contact?.name || conv.contact_name || conv.contact_phone;
             document.getElementById('chatPhone').textContent = conv.contact_phone;
             document.getElementById('chatAvatar').textContent = (conv.contact_name || conv.contact_phone)[0].toUpperCase();
             await loadMessages(conv.contact_phone);
@@ -150,7 +228,7 @@
 
         async function loadMessages(phone) {
             try {
-                const res = await fetch(`${API}/api/chat/messages/${phone}?per_page=100`);
+                const res = await fetch(`${API}/api/chat/messages/${phone}?per_page=100`, { headers: authHeaders() });
                 const data = await res.json();
                 renderMessages(data.data);
             } catch(e) { console.error('Load messages failed:', e); }
@@ -161,7 +239,7 @@
             list.innerHTML = msgs.map(m => {
                 let content = '';
                 if (m.media_url && m.media_mime && m.media_mime.startsWith('image')) {
-                    content += `<div class="msg-media"><img src="${API}/${m.media_url}" alt="image"></div>`;
+                    content += `<div class="msg-media"><img src="${mediaUrl(m.media_url)}" alt="image"></div>`;
                 }
                 if (m.body) content += `<div>${escapeHtml(m.body)}</div>`;
                 if (!content) content = `<div><em>[${m.msg_type}]</em></div>`;
@@ -173,8 +251,13 @@
 
         function escapeHtml(text) {
             const d = document.createElement('div');
-            d.textContent = text;
+            d.textContent = text ?? '';
             return d.innerHTML;
+        }
+
+        function mediaUrl(path) {
+            const safePath = String(path || '').replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+            return `${API}/${safePath}`;
         }
 
         async function sendMessage() {
@@ -194,7 +277,7 @@
             }
             try {
                 const res = await fetch(`${API}${endpoint}`, {
-                    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+                    method: 'POST', headers: authHeaders({'Content-Type':'application/json'}), body: JSON.stringify(body)
                 });
                 const data = await res.json();
                 if (data.success) {
@@ -224,15 +307,22 @@
         }
 
         function connectGlobalWs() {
-            wsGlobal = new WebSocket(`${WS_URL}/ws/updates`);
+            if (!token) return;
+            const generation = ++wsGeneration;
+            if (wsGlobal) wsGlobal.close();
+            wsGlobal = new WebSocket(`${wsBaseUrl()}/ws/updates?token=${encodeURIComponent(token)}`);
             wsGlobal.onopen = () => { document.getElementById('wsStatus').className = 'ws-status ws-connected'; };
-            wsGlobal.onclose = () => { document.getElementById('wsStatus').className = 'ws-status ws-disconnected'; setTimeout(connectGlobalWs, 3000); };
+            wsGlobal.onclose = () => {
+                document.getElementById('wsStatus').className = 'ws-status ws-disconnected';
+                if (token && generation === wsGeneration) setTimeout(connectGlobalWs, 3000);
+            };
             wsGlobal.onmessage = (e) => { loadConversations(); };
         }
 
         function connectChatWs(convId) {
             if (wsChat) wsChat.close();
-            wsChat = new WebSocket(`${WS_URL}/ws/chat/${convId}`);
+            if (!token) return;
+            wsChat = new WebSocket(`${wsBaseUrl()}/ws/chat/${convId}?token=${encodeURIComponent(token)}`);
             wsChat.onmessage = (e) => {
                 const msg = JSON.parse(e.data);
                 appendMessage({ direction:msg.direction, msg_type:msg.msg_type, body:msg.body, timestamp:msg.timestamp, status:'received' });
@@ -251,7 +341,7 @@
             if (caption) formData.append('caption', caption);
 
             try {
-                const res = await fetch(`${API}/api/chat/send/upload`, { method: 'POST', body: formData });
+                const res = await fetch(`${API}/api/chat/send/upload`, { method: 'POST', headers: authHeaders(), body: formData });
                 const data = await res.json();
                 if (data.success) {
                     appendMessage({ direction:'outbound', msg_type:file.type.startsWith('image')?'image':'document', body:caption||file.name, timestamp:new Date().toISOString(), status:'sent' });
@@ -260,6 +350,7 @@
             input.value = '';
         }
 
+        loadContacts();
         loadConversations();
         connectGlobalWs();
     </script>
