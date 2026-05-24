@@ -37,6 +37,7 @@ COPY --from=builder /app/target/release/worker /usr/local/bin/worker
 # Copy migrations and static assets
 COPY migrations ./migrations
 COPY static ./static
+RUN mkdir -p /app/media
 
 # Copy entrypoint
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
