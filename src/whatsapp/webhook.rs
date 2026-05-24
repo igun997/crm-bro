@@ -129,13 +129,14 @@ pub async fn receive(
             }
 
             // Resolve tenant-specific storage with fallback to global
-            let tenant_storage = match StorageService::resolve_for_tenant(db.get_ref(), tenant.id).await {
-                Ok(ts) => ts,
-                Err(error) => {
-                    tracing::error!(%error, "Failed to resolve tenant storage");
-                    None
-                }
-            };
+            let tenant_storage =
+                match StorageService::resolve_for_tenant(db.get_ref(), tenant.id).await {
+                    Ok(ts) => ts,
+                    Err(error) => {
+                        tracing::error!(%error, "Failed to resolve tenant storage");
+                        None
+                    }
+                };
             let effective_storage = tenant_storage.as_ref().unwrap_or(storage.get_ref());
 
             if let Some(messages) = &change.value.messages {

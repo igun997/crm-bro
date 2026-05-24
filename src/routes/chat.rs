@@ -484,7 +484,6 @@ pub async fn send_upload(
         Err(response) => return response,
     };
 
-
     // Resolve tenant-specific storage
     let tenant_storage = match StorageService::resolve_for_tenant(db.get_ref(), tenant_id).await {
         Ok(ts) => ts,
@@ -623,7 +622,10 @@ pub async fn send_upload(
         msg.id,
         sanitize_filename(&filename)
     );
-    let stored = match effective_storage.put(&key, Bytes::from(file_bytes), &mime_type).await {
+    let stored = match effective_storage
+        .put(&key, Bytes::from(file_bytes), &mime_type)
+        .await
+    {
         Ok(stored) => stored,
         Err(error) => {
             cleanup_message(db.get_ref(), msg.id).await;
