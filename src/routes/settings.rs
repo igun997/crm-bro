@@ -18,7 +18,7 @@ use crate::rbac::{permissions, require_permission};
     "business_account_id": "987654321",
     "display_phone_number": "+6281234567890",
     "access_token_masked": "EAAG...xYzW",
-    "verify_token": "my-secret-verify-token",
+    "verify_token_masked": "my-s...oken",
     "api_version": "v25.0",
     "is_active": true,
     "webhook_url": "https://crm.example.com/webhook/whatsapp/acme"
@@ -30,7 +30,7 @@ pub struct WhatsAppAccountResponse {
     pub business_account_id: String,
     pub display_phone_number: Option<String>,
     pub access_token_masked: String,
-    pub verify_token: String,
+    pub verify_token_masked: String,
     pub api_version: String,
     pub is_active: bool,
     pub webhook_url: String,
@@ -298,7 +298,7 @@ fn build_account_response(
         business_account_id: account.business_account_id.clone(),
         display_phone_number: account.display_phone_number.clone(),
         access_token_masked: mask_token(&account.access_token),
-        verify_token: account.verify_token.clone(),
+        verify_token_masked: mask_token(&account.verify_token),
         api_version: account.api_version.clone(),
         is_active: account.is_active,
         webhook_url: format!(
