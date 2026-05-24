@@ -6,7 +6,8 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::auth::CurrentUser;
-use crate::models::tenant_whatsapp_account;
+use crate::config::AppConfig;
+use crate::models::{tenant, tenant_whatsapp_account};
 use crate::rbac::{permissions, require_permission};
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -20,6 +21,7 @@ pub struct WhatsAppAccountResponse {
     pub verify_token: String,
     pub api_version: String,
     pub is_active: bool,
+    pub webhook_url: String,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
@@ -54,6 +56,7 @@ pub struct PatchWhatsAppAccountRequest {
 pub async fn list_whatsapp_accounts(
     current: CurrentUser,
     db: web::Data<DatabaseConnection>,
+    config: web::Data<AppConfig>,
 ) -> HttpResponse {
     let ctx = &current.0;
     if let Err(response) = require_permission(ctx, permissions::SETTINGS_WHATSAPP_MANAGE) {
@@ -61,6 +64,18 @@ pub async fn list_whatsapp_accounts(
     }
     let Some(tenant_id) = ctx.tenant_id else {
         return forbidden("Tenant context required");
+    };
+
+    let tenant = match tenant::Entity::find_by_id(tenant_id)
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(tenant)) => tenant,
+        Ok(None) => return server_error("Tenant not found"),
+        Err(error) => {
+            tracing::error!(%error, "Failed to load tenant");
+            return server_error("Failed to load tenant");
+        }
     };
 
     match tenant_whatsapp_account::Entity::find()
@@ -71,7 +86,7 @@ pub async fn list_whatsapp_accounts(
         Ok(accounts) => HttpResponse::Ok().json(
             accounts
                 .into_iter()
-                .map(account_response)
+                .map(|account| build_account_response(&account, &tenant.slug, &config.app_base_url))
                 .collect::<Vec<_>>(),
         ),
         Err(error) => {
@@ -92,6 +107,7 @@ pub async fn list_whatsapp_accounts(
 pub async fn create_whatsapp_account(
     current: CurrentUser,
     db: web::Data<DatabaseConnection>,
+    config: web::Data<AppConfig>,
     body: web::Json<UpsertWhatsAppAccountRequest>,
 ) -> HttpResponse {
     let ctx = &current.0;
@@ -100,6 +116,18 @@ pub async fn create_whatsapp_account(
     }
     let Some(tenant_id) = ctx.tenant_id else {
         return forbidden("Tenant context required");
+    };
+
+    let tenant = match tenant::Entity::find_by_id(tenant_id)
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(tenant)) => tenant,
+        Ok(None) => return server_error("Tenant not found"),
+        Err(error) => {
+            tracing::error!(%error, "Failed to load tenant");
+            return server_error("Failed to load tenant");
+        }
     };
 
     let model = tenant_whatsapp_account::ActiveModel {
@@ -118,7 +146,7 @@ pub async fn create_whatsapp_account(
     };
 
     match model.insert(db.get_ref()).await {
-        Ok(account) => HttpResponse::Ok().json(account_response(account)),
+        Ok(account) => HttpResponse::Ok().json(build_account_response(&account, &tenant.slug, &config.app_base_url)),
         Err(error) => {
             tracing::error!(%error, "Failed to create WhatsApp account");
             HttpResponse::Conflict().json(serde_json::json!({
@@ -141,6 +169,7 @@ pub async fn create_whatsapp_account(
 pub async fn update_whatsapp_account(
     current: CurrentUser,
     db: web::Data<DatabaseConnection>,
+    config: web::Data<AppConfig>,
     path: web::Path<i32>,
     body: web::Json<PatchWhatsAppAccountRequest>,
 ) -> HttpResponse {
@@ -150,6 +179,18 @@ pub async fn update_whatsapp_account(
     }
     let Some(tenant_id) = ctx.tenant_id else {
         return forbidden("Tenant context required");
+    };
+
+    let tenant = match tenant::Entity::find_by_id(tenant_id)
+        .one(db.get_ref())
+        .await
+    {
+        Ok(Some(tenant)) => tenant,
+        Ok(None) => return server_error("Tenant not found"),
+        Err(error) => {
+            tracing::error!(%error, "Failed to load tenant");
+            return server_error("Failed to load tenant");
+        }
     };
 
     let id = path.into_inner();
@@ -196,7 +237,7 @@ pub async fn update_whatsapp_account(
     }
 
     match active.update(db.get_ref()).await {
-        Ok(account) => HttpResponse::Ok().json(account_response(account)),
+        Ok(account) => HttpResponse::Ok().json(build_account_response(&account, &tenant.slug, &config.app_base_url)),
         Err(error) => {
             tracing::error!(%error, "Failed to update WhatsApp account");
             server_error("Failed to update WhatsApp settings")
@@ -215,19 +256,25 @@ pub fn mask_token(token: &str) -> String {
     }
 }
 
-fn account_response(account: tenant_whatsapp_account::Model) -> WhatsAppAccountResponse {
+fn build_account_response(
+    account: &tenant_whatsapp_account::Model,
+    tenant_slug: &str,
+    app_base_url: &str,
+) -> WhatsAppAccountResponse {
     WhatsAppAccountResponse {
         id: account.id,
         tenant_id: account.tenant_id,
-        phone_number_id: account.phone_number_id,
-        business_account_id: account.business_account_id,
-        display_phone_number: account.display_phone_number,
+        phone_number_id: account.phone_number_id.clone(),
+        business_account_id: account.business_account_id.clone(),
+        display_phone_number: account.display_phone_number.clone(),
         access_token_masked: mask_token(&account.access_token),
-        verify_token: account.verify_token,
-        api_version: account.api_version,
+        verify_token: account.verify_token.clone(),
+        api_version: account.api_version.clone(),
         is_active: account.is_active,
+        webhook_url: format!("{}/webhook/whatsapp/{}", app_base_url.trim_end_matches('/'), tenant_slug),
     }
 }
+
 
 fn forbidden(message: &str) -> HttpResponse {
     HttpResponse::Forbidden().json(serde_json::json!({
