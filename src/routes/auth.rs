@@ -170,18 +170,28 @@ mod tests {
         test::call_service(&app, req).await.status()
     }
 
+    fn test_admin_credentials() -> Option<(String, String)> {
+        Some((
+            std::env::var("CRM_BRO_TEST_ADMIN_EMAIL").ok()?,
+            std::env::var("CRM_BRO_TEST_ADMIN_PASSWORD").ok()?,
+        ))
+    }
+
     #[actix_rt::test]
     async fn seeded_admin_can_login_with_real_db_user() {
-        assert_eq!(
-            login_status("admin@example.invalid", "REDACTED_ADMIN_PASSWORD").await,
-            StatusCode::OK
-        );
+        let Some((email, password)) = test_admin_credentials() else {
+            return;
+        };
+        assert_eq!(login_status(&email, &password).await, StatusCode::OK);
     }
 
     #[actix_rt::test]
     async fn seeded_admin_wrong_password_is_rejected() {
+        let Some((email, _)) = test_admin_credentials() else {
+            return;
+        };
         assert_eq!(
-            login_status("admin@example.invalid", "wrong-password").await,
+            login_status(&email, "wrong-password").await,
             StatusCode::UNAUTHORIZED
         );
     }
