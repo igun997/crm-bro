@@ -2,8 +2,8 @@ use crm_bro::api::dto::contacts::{
     AttachTagRequest, ContactResponse, CreateTagRequest, PaginatedContacts, PatchContactRequest,
     TagResponse,
 };
+use crm_bro::api::routes;
 use crm_bro::config;
-use crm_bro::routes;
 use crm_bro::storage::StorageService;
 use crm_bro::whatsapp;
 use crm_bro::ws;
