@@ -68,7 +68,7 @@ docker run --env-file .env \
 | `latest` | Latest stable release |
 | `0.1.0` | Specific version |
 | `0.1` | Latest patch in minor |
-| `0.1.0-alpha.1` | Pre-release (not tagged as `latest`) |
+| `0.1.0-alpha.3` | Pre-release (not tagged as `latest`) |
 
 ### Production with R2/S3 Storage
 
@@ -113,14 +113,17 @@ R2_PUBLIC_BASE_URL=https://cdn.yourdomain.com
 ## Features
 
 - Multi-tenant architecture (single DB, tenant-scoped data)
+- Domain-driven design (entities, factories, repositories, services)
 - JWT authentication with RBAC (roles & permissions)
 - Superadmin / tenant admin / agent / viewer role hierarchy
 - Tenant-scoped contacts with tagging and filtering
 - WhatsApp inbound webhook (text, media, status updates)
 - Outbound message queue (DB-backed outbox worker)
+- Message status invariant enforcement (prevents wa_message_id + failed state)
 - Real-time WebSocket updates (tenant-scoped)
 - Chat REST API with conversation history
 - Media upload and download (local + R2)
+- Per-tenant WhatsApp and R2/S3 storage configuration
 - Admin API for tenant, user, and role management
 - Swagger UI at `/swagger-ui/`
 
@@ -230,29 +233,39 @@ See [Docker Deployment](#docker-deployment-recommended) for full variable refere
 
 ```
 src/
-├── auth/          # JWT, password hashing, extractor
+├── api/
+│   ├── dto/           # HTTP request/response DTOs
+│   │   └── contacts.rs
+│   └── routes/        # HTTP handlers
+│       ├── admin.rs   # Tenant/user/role management
+│       ├── auth.rs    # Login
+│       ├── chat.rs    # Chat API
+│       ├── contacts.rs # Contacts & tags
+│       ├── health.rs  # Health check
+│       └── settings.rs # WhatsApp/storage settings
+├── common/            # Re-exports shared infrastructure
+├── domain/
+│   ├── auth/          # User entity & factory
+│   ├── contacts/      # Entity, repository, service
+│   ├── messaging/     # Message/Conversation/Outbox state machine
+│   ├── storage/       # StorageConfigFactory
+│   └── tenants/       # Tenant, WhatsApp, Storage settings
+├── auth/              # JWT, password hashing, extractor
 ├── bin/
-│   ├── seed_admin.rs   # Superadmin seeder CLI
-│   └── worker.rs       # Outbox message worker
-├── config/        # App configuration
-├── middleware/     # Token validation
-├── models/        # SeaORM entities
-├── rbac/          # Role/permission constants & helpers
-├── routes/        # HTTP handlers
-│   ├── admin.rs   # Tenant/user/role management
-│   ├── auth.rs    # Login
-│   ├── chat.rs    # Chat API
-│   ├── contacts.rs # Contacts & tags
-│   ├── health.rs  # Health check
-│   └── settings.rs # WhatsApp settings
-├── storage/       # Local/R2 storage abstraction
-├── whatsapp/      # Meta API client, webhook, media
-├── ws/            # WebSocket hub & sessions
+│   ├── seed_admin.rs  # Superadmin seeder CLI
+│   └── worker.rs      # Outbox message worker
+├── config/            # App configuration
+├── middleware/        # Token validation
+├── models/            # SeaORM persistence entities
+├── rbac/              # Role/permission constants & helpers
+├── storage/           # Local/R2 storage abstraction
+├── whatsapp/          # Meta API client, webhook, media
+├── ws/                # WebSocket hub & sessions
 ├── lib.rs
 ├── main.rs
 └── response.rs
-migrations/        # SQL migrations
-static/            # Dev chat UI
+migrations/            # SQL migrations
+static/                # Dev chat UI
 ```
 
 ## Releases
