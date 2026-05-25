@@ -7,7 +7,6 @@ pub mod middleware;
 pub mod models;
 pub mod rbac;
 pub mod response;
-pub mod routes;
 pub mod storage;
 pub mod whatsapp;
 pub mod ws;
