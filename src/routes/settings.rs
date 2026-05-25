@@ -484,31 +484,11 @@ pub fn mask_token(token: &str) -> String {
 }
 
 fn account_entity_from_model(model: tenant_whatsapp_account::Model) -> WhatsAppSettings {
-    WhatsAppSettings::new(
-        model.tenant_id,
-        model.phone_number_id,
-        model.business_account_id,
-        model.display_phone_number,
-        model.access_token,
-        model.verify_token,
-        Some(model.api_version),
-        model.is_active,
-    )
-    .expect("persisted WhatsApp settings should be valid")
+    WhatsAppSettings::from_model(model)
 }
 
 fn storage_entity_from_model(model: tenant_storage_config::Model) -> StorageSettings {
-    StorageSettings::new(
-        model.tenant_id,
-        model.endpoint,
-        Some(model.region),
-        model.access_key_id,
-        model.secret_access_key,
-        model.bucket,
-        model.public_base_url,
-        model.is_active,
-    )
-    .expect("persisted storage settings should be valid")
+    StorageSettings::from_model(model)
 }
 
 fn build_account_response(
@@ -747,6 +727,7 @@ mod tests {
         assert_eq!(patch_resp.status(), StatusCode::OK);
         let patch_body: serde_json::Value =
             serde_json::from_slice(&awtest::read_body(patch_resp).await).unwrap();
+        assert_eq!(patch_body["id"], account_id);
         assert_eq!(patch_body["access_token_masked"], "upda...9876");
         assert_eq!(patch_body["is_active"], false);
         assert!(patch_body.get("access_token").is_none());

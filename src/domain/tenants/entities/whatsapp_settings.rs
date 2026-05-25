@@ -106,3 +106,45 @@ impl WhatsAppSettings {
         self.is_active
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_whatsapp_settings_requires_phone_number_id() {
+        let result = WhatsAppSettings::new(
+            1,
+            " ".into(),
+            "biz-123".into(),
+            None,
+            "access-token".into(),
+            "verify-token".into(),
+            None,
+            true,
+        );
+
+        assert!(matches!(
+            result,
+            Err(TenantError::InvalidWhatsAppSettings(_))
+        ));
+    }
+
+    #[test]
+    fn new_whatsapp_settings_defaults_api_version() {
+        let settings = WhatsAppSettings::new(
+            1,
+            "phone-123".into(),
+            "biz-123".into(),
+            None,
+            "access-token".into(),
+            "verify-token".into(),
+            None,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(settings.api_version(), "v25.0");
+        assert_eq!(settings.id(), 0);
+    }
+}

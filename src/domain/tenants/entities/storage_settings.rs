@@ -90,3 +90,45 @@ impl StorageSettings {
         self.is_active
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_storage_settings_rejects_missing_endpoint() {
+        let result = StorageSettings::new(
+            1,
+            " ".into(),
+            None,
+            "access-key".into(),
+            "secret-key".into(),
+            "bucket".into(),
+            None,
+            true,
+        );
+
+        assert!(matches!(
+            result,
+            Err(TenantError::InvalidStorageSettings(_))
+        ));
+    }
+
+    #[test]
+    fn new_storage_settings_defaults_region_to_auto() {
+        let settings = StorageSettings::new(
+            1,
+            "https://example.r2.cloudflarestorage.com".into(),
+            None,
+            "access-key".into(),
+            "secret-key".into(),
+            "bucket".into(),
+            Some("https://cdn.example.com".into()),
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(settings.region(), "auto");
+        assert_eq!(settings.id(), 0);
+    }
+}
