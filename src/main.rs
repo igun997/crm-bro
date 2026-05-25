@@ -3,7 +3,7 @@ use crm_bro::api::dto::contacts::{
     TagResponse,
 };
 use crm_bro::api::routes;
-use crm_bro::config;
+use crm_bro::infrastructure::config::AppConfig;
 use crm_bro::storage::StorageService;
 use crm_bro::whatsapp;
 use crm_bro::ws;
@@ -16,7 +16,6 @@ use sea_orm::Database;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
-use config::AppConfig;
 use routes::admin::{
     AdminUserResponse, AssignRoleRequest, CreateRoleRequest, CreateTenantRequest,
     CreateTenantUserRequest, PatchRoleRequest, PatchUserRequest, PermissionResponse,

@@ -835,7 +835,7 @@ mod tests {
 
     use crate::{
         auth::jwt::{build_claims, encode_jwt},
-        config::AppConfig,
+        infrastructure::config::AppConfig,
     };
 
     async fn post_tenant(

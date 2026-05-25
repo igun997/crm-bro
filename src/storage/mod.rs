@@ -6,7 +6,7 @@ use object_store::aws::AmazonS3Builder;
 use object_store::path::Path as ObjectPath;
 use object_store::{Attribute, AttributeValue, Attributes, ObjectStore, PutOptions};
 
-use crate::config::AppConfig;
+use crate::infrastructure::config::AppConfig;
 use crate::models::tenant_storage_config;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 

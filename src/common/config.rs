@@ -1,1 +1,1 @@
-pub use crate::config::*;
+pub use crate::infrastructure::config::*;

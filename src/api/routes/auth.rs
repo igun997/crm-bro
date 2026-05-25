@@ -5,7 +5,7 @@ use utoipa::ToSchema;
 
 use crate::auth::jwt::{build_claims, encode_jwt};
 use crate::auth::password::verify_password;
-use crate::config::AppConfig;
+use crate::infrastructure::config::AppConfig;
 use crate::models::user;
 
 #[derive(Debug, Deserialize, ToSchema)]

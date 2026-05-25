@@ -2,7 +2,6 @@ pub mod api;
 pub mod application;
 pub mod auth;
 pub mod common;
-pub mod config;
 pub mod domain;
 pub mod infrastructure;
 pub mod middleware;

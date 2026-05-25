@@ -7,7 +7,7 @@ use actix_web_actors::ws;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::auth::jwt::decode_jwt;
-use crate::config::AppConfig;
+use crate::infrastructure::config::AppConfig;
 use crate::models::conversation;
 use hub::ChatHub;
 

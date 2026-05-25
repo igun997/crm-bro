@@ -6,10 +6,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::auth::CurrentUser;
-use crate::config::AppConfig;
 use crate::domain::tenants::{
     SeaOrmTenantRepository, StorageSettings, TenantService, WhatsAppSettings,
 };
+use crate::infrastructure::config::AppConfig;
 use crate::models::{tenant, tenant_storage_config, tenant_whatsapp_account};
 use crate::rbac::{permissions, require_permission};
 
@@ -561,7 +561,7 @@ mod tests {
     use super::mask_token;
     use crate::auth::jwt::{build_claims, encode_jwt};
     use crate::auth::password::hash_password;
-    use crate::config::AppConfig;
+    use crate::infrastructure::config::AppConfig;
     use crate::models::{permission, role, role_permission, tenant, user, user_role};
     use crate::rbac::permissions;
 

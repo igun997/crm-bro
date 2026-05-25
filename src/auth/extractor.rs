@@ -5,7 +5,7 @@ use std::collections::HashSet;
 
 use crate::auth::context::AuthContext;
 use crate::auth::jwt::decode_jwt;
-use crate::config::AppConfig;
+use crate::infrastructure::config::AppConfig;
 use crate::middleware::extract_bearer;
 use crate::models::{permission, role_permission, user, user_role};
 
@@ -114,7 +114,7 @@ mod tests {
     use super::CurrentUser;
     use crate::{
         auth::jwt::{build_claims, encode_jwt},
-        config::AppConfig,
+        infrastructure::config::AppConfig,
     };
 
     async fn whoami(current: CurrentUser) -> HttpResponse {

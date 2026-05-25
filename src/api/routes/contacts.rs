@@ -597,8 +597,8 @@ mod tests {
 
     use crate::auth::jwt::{build_claims, encode_jwt};
     use crate::auth::password::hash_password;
-    use crate::config::AppConfig;
     use crate::domain::contacts::Contact;
+    use crate::infrastructure::config::AppConfig;
     use crate::models::{contact, tenant, user};
 
     #[test]
