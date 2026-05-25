@@ -6,8 +6,8 @@ use actix_web::{get, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
-use crate::auth::jwt::decode_jwt;
 use crate::infrastructure::config::AppConfig;
+use crate::infrastructure::security::decode_jwt;
 use crate::models::conversation;
 use hub::ChatHub;
 
@@ -108,7 +108,7 @@ async fn ensure_conversation_tenant(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::auth::jwt::{build_claims, encode_jwt};
+    use crate::infrastructure::security::{build_claims, encode_jwt};
 
     fn test_config() -> AppConfig {
         AppConfig {

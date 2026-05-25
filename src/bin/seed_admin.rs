@@ -3,7 +3,7 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, EntityTrait, QueryFilter, QueryOrder,
 };
 
-use crm_bro::auth::password::hash_password;
+use crm_bro::infrastructure::security::hash_password;
 use crm_bro::models::permission;
 use crm_bro::models::role;
 use crm_bro::models::role_permission;

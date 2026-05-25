@@ -3,10 +3,9 @@ use futures_util::future::LocalBoxFuture;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use std::collections::HashSet;
 
-use crate::api::middleware::extract_bearer;
-use crate::auth::context::AuthContext;
-use crate::auth::jwt::decode_jwt;
+use crate::api::middleware::{extract_bearer, AuthContext};
 use crate::infrastructure::config::AppConfig;
+use crate::infrastructure::security::decode_jwt;
 use crate::models::{permission, role_permission, user, user_role};
 
 #[derive(Debug, Clone)]
@@ -113,8 +112,8 @@ mod tests {
 
     use super::CurrentUser;
     use crate::{
-        auth::jwt::{build_claims, encode_jwt},
         infrastructure::config::AppConfig,
+        infrastructure::security::{build_claims, encode_jwt},
     };
 
     async fn whoami(current: CurrentUser) -> HttpResponse {

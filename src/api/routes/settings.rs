@@ -5,7 +5,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::auth::CurrentUser;
+use crate::api::middleware::CurrentUser;
 use crate::domain::tenants::{
     SeaOrmTenantRepository, StorageSettings, TenantService, WhatsAppSettings,
 };
@@ -559,9 +559,9 @@ mod tests {
     };
 
     use super::mask_token;
-    use crate::auth::jwt::{build_claims, encode_jwt};
-    use crate::auth::password::hash_password;
     use crate::infrastructure::config::AppConfig;
+    use crate::infrastructure::security::hash_password;
+    use crate::infrastructure::security::{build_claims, encode_jwt};
     use crate::models::{permission, role, role_permission, tenant, user, user_role};
     use crate::rbac::permissions;
 

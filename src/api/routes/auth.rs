@@ -3,9 +3,9 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::auth::jwt::{build_claims, encode_jwt};
-use crate::auth::password::verify_password;
 use crate::infrastructure::config::AppConfig;
+use crate::infrastructure::security::verify_password;
+use crate::infrastructure::security::{build_claims, encode_jwt};
 use crate::models::user;
 
 #[derive(Debug, Deserialize, ToSchema)]

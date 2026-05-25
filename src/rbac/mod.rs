@@ -1,6 +1,6 @@
 use actix_web::{http::StatusCode, HttpResponse};
 
-use crate::auth::context::AuthContext;
+use crate::api::middleware::AuthContext;
 
 pub mod permissions {
     pub const CHATS_READ: &str = "chats.read";
@@ -160,7 +160,7 @@ mod tests {
     use std::collections::HashSet;
 
     use super::{default_tenant_roles, permissions, require_permission, roles, PERMISSIONS};
-    use crate::auth::context::AuthContext;
+    use crate::api::middleware::AuthContext;
 
     fn ctx(is_superadmin: bool, permissions: &[&str]) -> AuthContext {
         AuthContext {

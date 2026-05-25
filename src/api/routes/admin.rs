@@ -6,9 +6,9 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
-use crate::auth::password::hash_password;
-use crate::auth::CurrentUser;
+use crate::api::middleware::CurrentUser;
 use crate::domain::tenants::{SeaOrmTenantRepository, TenantService};
+use crate::infrastructure::security::hash_password;
 use crate::models::{permission, role, role_permission, tenant, user, user_role};
 use crate::rbac::{default_tenant_roles, permissions as permission_codes};
 
@@ -248,7 +248,7 @@ fn user_response(user: user::Model) -> AdminUserResponse {
 }
 
 fn can_manage_tenant(
-    ctx: &crate::auth::context::AuthContext,
+    ctx: &crate::api::middleware::AuthContext,
     tenant_id: i32,
 ) -> Result<(), HttpResponse> {
     if ctx.is_superadmin {
@@ -266,7 +266,7 @@ fn can_manage_tenant(
 
 async fn can_manage_user(
     db: &DatabaseConnection,
-    ctx: &crate::auth::context::AuthContext,
+    ctx: &crate::api::middleware::AuthContext,
     user_id: i32,
 ) -> Result<user::Model, HttpResponse> {
     let Some(user) = user::Entity::find_by_id(user_id)
@@ -834,8 +834,8 @@ mod tests {
     use sea_orm::Database;
 
     use crate::{
-        auth::jwt::{build_claims, encode_jwt},
         infrastructure::config::AppConfig,
+        infrastructure::security::{build_claims, encode_jwt},
     };
 
     async fn post_tenant(

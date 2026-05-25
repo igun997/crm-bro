@@ -2,7 +2,7 @@ use crate::api::dto::contacts::{
     AttachTagRequest, ContactListQuery, ContactResponse, CreateTagRequest, PaginatedContacts,
     PatchContactRequest, TagResponse,
 };
-use crate::auth::CurrentUser;
+use crate::api::middleware::CurrentUser;
 use crate::domain::contacts::repositories::SeaOrmContactRepository;
 use crate::domain::contacts::{Contact, ContactError, ContactService};
 use crate::models::{contact, contact_tag, tag, user};
@@ -595,10 +595,10 @@ mod tests {
     use actix_web::{http::StatusCode, test as awtest, web, App};
     use sea_orm::{ActiveModelTrait, ActiveValue::Set, Database};
 
-    use crate::auth::jwt::{build_claims, encode_jwt};
-    use crate::auth::password::hash_password;
     use crate::domain::contacts::Contact;
     use crate::infrastructure::config::AppConfig;
+    use crate::infrastructure::security::hash_password;
+    use crate::infrastructure::security::{build_claims, encode_jwt};
     use crate::models::{contact, tenant, user};
 
     #[test]

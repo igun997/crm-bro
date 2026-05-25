@@ -9,7 +9,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
-use crate::auth::extractor::CurrentUser;
+use crate::api::middleware::CurrentUser;
 use crate::models::{contact, conversation, message, outbox_message, tenant_whatsapp_account};
 use crate::rbac::{permissions, require_permission};
 use crate::storage::StorageService;
@@ -902,7 +902,7 @@ async fn create_outbox(
     .map_err(|error| format!("DB insert outbox: {error}"))
 }
 
-fn require_tenant(ctx: &crate::auth::context::AuthContext) -> Result<i32, HttpResponse> {
+fn require_tenant(ctx: &crate::api::middleware::AuthContext) -> Result<i32, HttpResponse> {
     ctx.tenant_id.ok_or_else(|| {
         HttpResponse::Forbidden().json(serde_json::json!({
             "success": false,
