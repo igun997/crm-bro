@@ -7,6 +7,9 @@ use utoipa::ToSchema;
 
 use crate::auth::CurrentUser;
 use crate::config::AppConfig;
+use crate::domain::tenants::{
+    SeaOrmTenantRepository, StorageSettings, TenantService, WhatsAppSettings,
+};
 use crate::models::{tenant, tenant_storage_config, tenant_whatsapp_account};
 use crate::rbac::{permissions, require_permission};
 
@@ -142,27 +145,19 @@ pub async fn list_whatsapp_accounts(
         return forbidden("Tenant context required");
     };
 
-    let tenant = match tenant::Entity::find_by_id(tenant_id)
-        .one(db.get_ref())
-        .await
-    {
-        Ok(Some(tenant)) => tenant,
-        Ok(None) => return server_error("Tenant not found"),
-        Err(error) => {
-            tracing::error!(%error, "Failed to load tenant");
-            return server_error("Failed to load tenant");
-        }
+    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
+    let tenant = match service.get_tenant(tenant_id).await {
+        Ok(tenant) => tenant,
+        Err(_) => return server_error("Tenant not found"),
     };
 
-    match tenant_whatsapp_account::Entity::find()
-        .filter(tenant_whatsapp_account::Column::TenantId.eq(tenant_id))
-        .all(db.get_ref())
-        .await
-    {
+    match service.list_whatsapp_accounts(tenant_id).await {
         Ok(accounts) => HttpResponse::Ok().json(
             accounts
                 .into_iter()
-                .map(|account| build_account_response(&account, &tenant.slug, &config.app_base_url))
+                .map(|account| {
+                    build_account_response(&account, tenant.slug(), &config.app_base_url)
+                })
                 .collect::<Vec<_>>(),
         ),
         Err(error) => {
@@ -194,37 +189,28 @@ pub async fn create_whatsapp_account(
         return forbidden("Tenant context required");
     };
 
-    let tenant = match tenant::Entity::find_by_id(tenant_id)
-        .one(db.get_ref())
+    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
+    let tenant = match service.get_tenant(tenant_id).await {
+        Ok(tenant) => tenant,
+        Err(_) => return server_error("Tenant not found"),
+    };
+
+    match service
+        .create_whatsapp_account(
+            tenant_id,
+            body.phone_number_id.clone(),
+            body.business_account_id.clone(),
+            body.display_phone_number.clone(),
+            body.access_token.clone(),
+            body.verify_token.clone(),
+            body.api_version.clone(),
+            body.is_active.unwrap_or(true),
+        )
         .await
     {
-        Ok(Some(tenant)) => tenant,
-        Ok(None) => return server_error("Tenant not found"),
-        Err(error) => {
-            tracing::error!(%error, "Failed to load tenant");
-            return server_error("Failed to load tenant");
-        }
-    };
-
-    let model = tenant_whatsapp_account::ActiveModel {
-        tenant_id: Set(tenant_id),
-        phone_number_id: Set(body.phone_number_id.clone()),
-        business_account_id: Set(body.business_account_id.clone()),
-        display_phone_number: Set(body.display_phone_number.clone()),
-        access_token: Set(body.access_token.clone()),
-        verify_token: Set(body.verify_token.clone()),
-        api_version: Set(body
-            .api_version
-            .clone()
-            .unwrap_or_else(|| "v25.0".to_string())),
-        is_active: Set(body.is_active.unwrap_or(true)),
-        ..Default::default()
-    };
-
-    match model.insert(db.get_ref()).await {
         Ok(account) => HttpResponse::Ok().json(build_account_response(
             &account,
-            &tenant.slug,
+            tenant.slug(),
             &config.app_base_url,
         )),
         Err(error) => {
@@ -317,11 +303,14 @@ pub async fn update_whatsapp_account(
     }
 
     match active.update(db.get_ref()).await {
-        Ok(account) => HttpResponse::Ok().json(build_account_response(
-            &account,
-            &tenant.slug,
-            &config.app_base_url,
-        )),
+        Ok(account) => {
+            let account = account_entity_from_model(account);
+            HttpResponse::Ok().json(build_account_response(
+                &account,
+                &tenant.slug,
+                &config.app_base_url,
+            ))
+        }
         Err(error) => {
             tracing::error!(%error, "Failed to update WhatsApp account");
             server_error("Failed to update WhatsApp settings")
@@ -349,11 +338,8 @@ pub async fn get_storage_config(
         return forbidden("Tenant context required");
     };
 
-    match tenant_storage_config::Entity::find()
-        .filter(tenant_storage_config::Column::TenantId.eq(tenant_id))
-        .one(db.get_ref())
-        .await
-    {
+    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
+    match service.get_storage_config(tenant_id).await {
         Ok(Some(config)) => HttpResponse::Ok().json(build_storage_config_response(&config)),
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
             "success": false,
@@ -387,19 +373,20 @@ pub async fn create_storage_config(
         return forbidden("Tenant context required");
     };
 
-    let model = tenant_storage_config::ActiveModel {
-        tenant_id: Set(tenant_id),
-        endpoint: Set(body.endpoint.clone()),
-        region: Set(body.region.clone().unwrap_or_else(|| "auto".to_string())),
-        access_key_id: Set(body.access_key_id.clone()),
-        secret_access_key: Set(body.secret_access_key.clone()),
-        bucket: Set(body.bucket.clone()),
-        public_base_url: Set(body.public_base_url.clone()),
-        is_active: Set(body.is_active.unwrap_or(true)),
-        ..Default::default()
-    };
-
-    match model.insert(db.get_ref()).await {
+    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
+    match service
+        .create_storage_config(
+            tenant_id,
+            body.endpoint.clone(),
+            body.region.clone(),
+            body.access_key_id.clone(),
+            body.secret_access_key.clone(),
+            body.bucket.clone(),
+            body.public_base_url.clone(),
+            body.is_active.unwrap_or(true),
+        )
+        .await
+    {
         Ok(config) => HttpResponse::Ok().json(build_storage_config_response(&config)),
         Err(error) => {
             tracing::error!(%error, "Failed to create storage config");
@@ -474,7 +461,10 @@ pub async fn update_storage_config(
     }
 
     match active.update(db.get_ref()).await {
-        Ok(config) => HttpResponse::Ok().json(build_storage_config_response(&config)),
+        Ok(config) => {
+            let config = storage_entity_from_model(config);
+            HttpResponse::Ok().json(build_storage_config_response(&config))
+        }
         Err(error) => {
             tracing::error!(%error, "Failed to update storage config");
             server_error("Failed to update storage configuration")
@@ -493,21 +483,49 @@ pub fn mask_token(token: &str) -> String {
     }
 }
 
+fn account_entity_from_model(model: tenant_whatsapp_account::Model) -> WhatsAppSettings {
+    WhatsAppSettings::new(
+        model.tenant_id,
+        model.phone_number_id,
+        model.business_account_id,
+        model.display_phone_number,
+        model.access_token,
+        model.verify_token,
+        Some(model.api_version),
+        model.is_active,
+    )
+    .expect("persisted WhatsApp settings should be valid")
+}
+
+fn storage_entity_from_model(model: tenant_storage_config::Model) -> StorageSettings {
+    StorageSettings::new(
+        model.tenant_id,
+        model.endpoint,
+        Some(model.region),
+        model.access_key_id,
+        model.secret_access_key,
+        model.bucket,
+        model.public_base_url,
+        model.is_active,
+    )
+    .expect("persisted storage settings should be valid")
+}
+
 fn build_account_response(
-    account: &tenant_whatsapp_account::Model,
+    account: &WhatsAppSettings,
     tenant_slug: &str,
     app_base_url: &str,
 ) -> WhatsAppAccountResponse {
     WhatsAppAccountResponse {
-        id: account.id,
-        tenant_id: account.tenant_id,
-        phone_number_id: account.phone_number_id.clone(),
-        business_account_id: account.business_account_id.clone(),
-        display_phone_number: account.display_phone_number.clone(),
-        access_token_masked: mask_token(&account.access_token),
-        verify_token_masked: mask_token(&account.verify_token),
-        api_version: account.api_version.clone(),
-        is_active: account.is_active,
+        id: account.id(),
+        tenant_id: account.tenant_id(),
+        phone_number_id: account.phone_number_id().to_string(),
+        business_account_id: account.business_account_id().to_string(),
+        display_phone_number: account.display_phone_number().map(ToString::to_string),
+        access_token_masked: mask_token(account.access_token()),
+        verify_token_masked: mask_token(account.verify_token()),
+        api_version: account.api_version().to_string(),
+        is_active: account.is_active(),
         webhook_url: format!(
             "{}/webhook/whatsapp/{}",
             app_base_url.trim_end_matches('/'),
@@ -516,17 +534,17 @@ fn build_account_response(
     }
 }
 
-fn build_storage_config_response(row: &tenant_storage_config::Model) -> StorageConfigResponse {
+fn build_storage_config_response(row: &StorageSettings) -> StorageConfigResponse {
     StorageConfigResponse {
-        id: row.id,
-        tenant_id: row.tenant_id,
-        endpoint: row.endpoint.clone(),
-        region: row.region.clone(),
-        access_key_id: row.access_key_id.clone(),
-        secret_access_key_masked: mask_token(&row.secret_access_key),
-        bucket: row.bucket.clone(),
-        public_base_url: row.public_base_url.clone(),
-        is_active: row.is_active,
+        id: row.id(),
+        tenant_id: row.tenant_id(),
+        endpoint: row.endpoint().to_string(),
+        region: row.region().to_string(),
+        access_key_id: row.access_key_id().to_string(),
+        secret_access_key_masked: mask_token(row.secret_access_key()),
+        bucket: row.bucket().to_string(),
+        public_base_url: row.public_base_url().map(ToString::to_string),
+        is_active: row.is_active(),
     }
 }
 

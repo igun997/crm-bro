@@ -8,6 +8,7 @@ use utoipa::ToSchema;
 
 use crate::auth::password::hash_password;
 use crate::auth::CurrentUser;
+use crate::domain::tenants::{SeaOrmTenantRepository, TenantService};
 use crate::models::{permission, role, role_permission, tenant, user, user_role};
 use crate::rbac::{default_tenant_roles, permissions as permission_codes};
 
@@ -122,23 +123,21 @@ pub async fn create_tenant(
         return forbidden();
     }
 
-    let new_tenant = tenant::ActiveModel {
-        name: Set(body.name.clone()),
-        slug: Set(body.slug.clone()),
-        is_active: Set(true),
-        ..Default::default()
-    };
+    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
 
-    match new_tenant.insert(db.get_ref()).await {
+    match service
+        .create_tenant(body.name.clone(), body.slug.clone())
+        .await
+    {
         Ok(tenant) => {
-            if let Err(error) = seed_default_tenant_roles(db.get_ref(), tenant.id).await {
-                tracing::warn!(%error, tenant_id = tenant.id, "Failed to seed default tenant roles");
+            if let Err(error) = seed_default_tenant_roles(db.get_ref(), tenant.id()).await {
+                tracing::warn!(%error, tenant_id = tenant.id(), "Failed to seed default tenant roles");
             }
             HttpResponse::Ok().json(TenantResponse {
-                id: tenant.id,
-                name: tenant.name,
-                slug: tenant.slug,
-                is_active: tenant.is_active,
+                id: tenant.id(),
+                name: tenant.name().to_string(),
+                slug: tenant.slug().to_string(),
+                is_active: tenant.is_active(),
             })
         }
         Err(error) => {
