@@ -232,12 +232,20 @@ async fn mark_failure(
         .await
         .map_err(|db_error| format!("DB mark outbox failure: {db_error}"))?;
 
-    let mut msg_update: message::ActiveModel = msg.into();
-    msg_update.status = Set(if terminal { "failed" } else { "queued" }.to_string());
-    msg_update
-        .update(db)
-        .await
-        .map_err(|db_error| format!("DB mark message failure: {db_error}"))?;
+    if terminal && msg.wa_message_id.is_some() {
+        tracing::warn!(
+            message_id = msg.id,
+            wa_message_id = ?msg.wa_message_id,
+            "Skipping failed message status because WhatsApp message id exists"
+        );
+    } else {
+        let mut msg_update: message::ActiveModel = msg.into();
+        msg_update.status = Set(if terminal { "failed" } else { "queued" }.to_string());
+        msg_update
+            .update(db)
+            .await
+            .map_err(|db_error| format!("DB mark message failure: {db_error}"))?;
+    }
 
     tracing::warn!(attempts, terminal, %error, "Outbox job send failed");
     Ok(())

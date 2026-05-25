@@ -1,6 +1,7 @@
 use actix_web::{get, post, web, HttpResponse};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
+use crate::domain::messaging::MessageStatus;
 use crate::models::{contact, conversation, message, tenant_whatsapp_account};
 use crate::storage::StorageService;
 use crate::ws::hub::{ChatHub, ChatMessage as WsChatMessage};
@@ -326,8 +327,19 @@ async fn handle_status_update(
         .map_err(|error| format!("DB query: {error}"))?;
 
     if let Some(msg) = existing {
+        let parsed_status = MessageStatus::parse(&status.status)
+            .map_err(|error| format!("Invalid WhatsApp status update: {error}"))?;
+        if parsed_status == MessageStatus::Failed && msg.wa_message_id.is_some() {
+            tracing::warn!(
+                message_id = msg.id,
+                wa_message_id = ?msg.wa_message_id,
+                "Skipping failed status update because WhatsApp message id exists"
+            );
+            return Ok(());
+        }
+
         let mut update: message::ActiveModel = msg.into();
-        update.status = Set(status.status.clone());
+        update.status = Set(parsed_status.as_str().to_string());
         update
             .update(db)
             .await
