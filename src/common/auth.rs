@@ -1,1 +1,1 @@
-// Common auth module placeholder.
+pub use crate::auth::*;

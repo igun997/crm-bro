@@ -1,1 +1,1 @@
-// Common middleware module placeholder.
+pub use crate::middleware::*;

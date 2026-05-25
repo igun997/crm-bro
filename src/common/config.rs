@@ -1,1 +1,1 @@
-// Common config module placeholder.
+pub use crate::config::*;

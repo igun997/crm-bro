@@ -1,1 +1,1 @@
-// Common error module placeholder.
+pub use crate::response::*;
