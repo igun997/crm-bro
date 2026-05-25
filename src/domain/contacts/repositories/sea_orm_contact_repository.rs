@@ -49,6 +49,8 @@ impl ContactRepository for SeaOrmContactRepository {
         tenant_id: i32,
         pagination: Pagination,
     ) -> Result<Vec<Contact>, ContactError> {
+        let pagination = pagination.normalized();
+
         contact::Entity::find()
             .filter(contact::Column::TenantId.eq(tenant_id))
             .order_by_desc(contact::Column::UpdatedAt)

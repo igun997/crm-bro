@@ -8,6 +8,15 @@ pub struct Pagination {
     pub offset: u64,
 }
 
+impl Pagination {
+    pub fn normalized(self) -> Self {
+        Self {
+            limit: self.limit.max(1),
+            offset: self.offset,
+        }
+    }
+}
+
 impl Default for Pagination {
     fn default() -> Self {
         Self {
