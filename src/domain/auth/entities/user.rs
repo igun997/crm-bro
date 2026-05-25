@@ -98,3 +98,45 @@ impl User {
         self.is_active
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{AuthError, User};
+
+    #[test]
+    fn new_superadmin_sets_tenant_id_to_none() {
+        let user = User::new_superadmin("root@example.com", "Root", "hash").expect("valid user");
+
+        assert_eq!(user.tenant_id(), None);
+    }
+
+    #[test]
+    fn new_preserves_tenant_id() {
+        let user =
+            User::new(Some(42), "ada@example.com", "Ada Lovelace", "hash").expect("valid user");
+
+        assert_eq!(user.tenant_id(), Some(42));
+    }
+
+    #[test]
+    fn new_rejects_blank_name() {
+        let result = User::new(Some(42), "ada@example.com", "   ", "hash");
+
+        assert_eq!(result, Err(AuthError::InvalidName("   ".to_string())));
+    }
+
+    #[test]
+    fn new_rejects_blank_password_hash() {
+        let result = User::new(Some(42), "ada@example.com", "Ada Lovelace", "   ");
+
+        assert_eq!(result, Err(AuthError::InvalidPasswordHash));
+    }
+
+    #[test]
+    fn new_sets_is_active_to_true() {
+        let user =
+            User::new(Some(42), "ada@example.com", "Ada Lovelace", "hash").expect("valid user");
+
+        assert!(user.is_active());
+    }
+}

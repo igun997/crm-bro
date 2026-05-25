@@ -1,6 +1,9 @@
 pub mod entities;
 pub mod errors;
 
+pub use entities::User;
+pub use errors::AuthError;
+
 #[cfg(test)]
 mod tests {
     use super::entities::User;
