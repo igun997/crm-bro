@@ -1,1 +1,1 @@
-pub struct DtoMarker;
+// API DTO module placeholder.

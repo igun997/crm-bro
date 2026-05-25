@@ -1,1 +1,1 @@
-pub struct StorageMarker;
+// Domain storage module placeholder.

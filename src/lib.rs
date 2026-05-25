@@ -11,19 +11,3 @@ pub mod routes;
 pub mod storage;
 pub mod whatsapp;
 pub mod ws;
-
-#[cfg(test)]
-mod ddd_skeleton_tests {
-    use crate::{api, common, domain};
-
-    #[test]
-    fn exposes_ddd_module_roots() {
-        let _ = std::any::type_name::<
-            fn() -> (
-                api::routes::RoutesMarker,
-                common::error::ErrorMarker,
-                domain::storage::StorageMarker,
-            ),
-        >();
-    }
-}

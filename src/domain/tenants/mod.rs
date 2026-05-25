@@ -1,1 +1,1 @@
-pub struct TenantsMarker;
+// Domain tenants module placeholder.

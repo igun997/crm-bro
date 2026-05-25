@@ -1,1 +1,1 @@
-pub struct ContactsMarker;
+// Domain contacts module placeholder.

@@ -1,1 +1,1 @@
-pub struct AuthMarker;
+// Common auth module placeholder.

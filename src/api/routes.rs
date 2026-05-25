@@ -1,1 +1,1 @@
-pub struct RoutesMarker;
+// API routes module placeholder.

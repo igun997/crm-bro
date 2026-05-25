@@ -1,1 +1,1 @@
-pub struct MiddlewareMarker;
+// Common middleware module placeholder.

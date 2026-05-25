@@ -1,1 +1,1 @@
-pub struct ErrorMarker;
+// Common error module placeholder.

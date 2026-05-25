@@ -1,1 +1,1 @@
-pub struct ConfigMarker;
+// Common config module placeholder.

@@ -1,1 +1,1 @@
-pub struct MessagingMarker;
+// Domain messaging module placeholder.

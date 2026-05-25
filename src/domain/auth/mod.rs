@@ -1,1 +1,1 @@
-pub struct AuthMarker;
+// Domain auth module placeholder.
