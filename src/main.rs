@@ -1,3 +1,7 @@
+use crm_bro::api::dto::contacts::{
+    AttachTagRequest, ContactResponse, CreateTagRequest, PaginatedContacts, PatchContactRequest,
+    TagResponse,
+};
 use crm_bro::config;
 use crm_bro::routes;
 use crm_bro::storage::StorageService;
@@ -22,10 +26,6 @@ use routes::auth::{LoginRequest, LoginResponse, LoginUser};
 use routes::chat::{
     ConversationResponse, MessageResponse, PaginatedConversations, PaginatedMessages,
     SendMediaBody, SendResponse, SendTemplateBody, SendTextBody,
-};
-use routes::contacts::{
-    AttachTagRequest, ContactResponse, CreateTagRequest, PaginatedContacts, PatchContactRequest,
-    TagResponse,
 };
 use routes::health::HealthResponse;
 use routes::settings::{

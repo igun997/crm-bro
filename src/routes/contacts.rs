@@ -1,84 +1,14 @@
+use crate::api::dto::contacts::{
+    AttachTagRequest, ContactListQuery, ContactResponse, CreateTagRequest, PaginatedContacts,
+    PatchContactRequest, TagResponse,
+};
+use crate::auth::CurrentUser;
+use crate::models::{contact, contact_tag, tag, user};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
     PaginatorTrait, QueryFilter,
 };
-use serde::{Deserialize, Serialize};
-use utoipa::{IntoParams, ToSchema};
-
-use crate::auth::CurrentUser;
-use crate::models::{contact, contact_tag, tag, user};
-
-#[derive(Debug, Serialize, ToSchema)]
-#[schema(example = json!({"id": 1, "tenant_id": 1, "name": "VIP", "color": "#ff0000"}))]
-pub struct TagResponse {
-    pub id: i32,
-    pub tenant_id: i32,
-    pub name: String,
-    pub color: Option<String>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[schema(example = json!({
-    "id": 1, "tenant_id": 1, "phone": "628123456789",
-    "name": "Alice", "email": "alice@example.com", "company": "Acme",
-    "notes": "Key decision maker", "owner_user_id": 2,
-    "tags": [{"id": 1, "tenant_id": 1, "name": "VIP", "color": "#ff0000"}]
-}))]
-pub struct ContactResponse {
-    pub id: i32,
-    pub tenant_id: i32,
-    pub phone: String,
-    pub name: Option<String>,
-    pub email: Option<String>,
-    pub company: Option<String>,
-    pub notes: Option<String>,
-    pub owner_user_id: Option<i32>,
-    pub tags: Vec<TagResponse>,
-}
-
-#[derive(Debug, Deserialize, IntoParams)]
-pub struct ContactListQuery {
-    pub q: Option<String>,
-    pub tag: Option<String>,
-    pub owner_user_id: Option<i32>,
-    pub page: Option<u64>,
-    pub per_page: Option<u64>,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
-#[schema(example = json!({"data": [], "page": 1, "per_page": 20, "total": 0}))]
-pub struct PaginatedContacts {
-    pub data: Vec<ContactResponse>,
-    pub page: u64,
-    pub per_page: u64,
-    pub total: u64,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[schema(example = json!({"name": "Alice Updated", "company": "Acme Inc"}))]
-pub struct PatchContactRequest {
-    pub name: Option<String>,
-    pub email: Option<String>,
-    pub company: Option<String>,
-    pub notes: Option<String>,
-    pub owner_user_id: Option<i32>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[schema(example = json!({"name": "VIP", "color": "#ff0000"}))]
-pub struct CreateTagRequest {
-    pub name: String,
-    pub color: Option<String>,
-}
-
-#[derive(Debug, Deserialize, ToSchema)]
-#[schema(example = json!({"tag_id": 1}))]
-pub struct AttachTagRequest {
-    pub tag_id: Option<i32>,
-    pub name: Option<String>,
-    pub color: Option<String>,
-}
 
 #[utoipa::path(
     get,
