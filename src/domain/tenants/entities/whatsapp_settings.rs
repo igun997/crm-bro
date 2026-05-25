@@ -14,6 +14,7 @@ pub struct WhatsAppSettings {
 }
 
 impl WhatsAppSettings {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tenant_id: i32,
         phone_number_id: String,

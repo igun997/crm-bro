@@ -39,7 +39,7 @@ impl MessageDirection {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, MessagingError> {
+    pub fn parse(s: &str) -> Result<Self, MessagingError> {
         match s {
             "inbound" => Ok(Self::Inbound),
             "outbound" => Ok(Self::Outbound),
@@ -71,7 +71,7 @@ impl MessageType {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, MessagingError> {
+    pub fn parse(s: &str) -> Result<Self, MessagingError> {
         match s {
             "text" => Ok(Self::Text),
             "image" => Ok(Self::Image),
@@ -116,7 +116,7 @@ impl MessageStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, MessagingError> {
+    pub fn parse(s: &str) -> Result<Self, MessagingError> {
         match s {
             "received" => Ok(Self::Received),
             "queued" => Ok(Self::Queued),
@@ -159,7 +159,7 @@ impl OutboxStatus {
         }
     }
 
-    pub fn from_str(s: &str) -> Result<Self, MessagingError> {
+    pub fn parse(s: &str) -> Result<Self, MessagingError> {
         match s {
             "pending" => Ok(Self::Pending),
             "processing" => Ok(Self::Processing),
@@ -203,7 +203,7 @@ mod tests {
             MessageStatus::Failed,
         ] {
             assert_eq!(
-                MessageStatus::from_str(status.as_str()),
+                MessageStatus::parse(status.as_str()),
                 Ok(status),
                 "Status roundtrip failed for {:?}",
                 status

@@ -96,6 +96,7 @@ impl Conversation {
         self.updated_at
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_model(model: conversation_model::Model) -> Self {
         Self {
             id: model.id,
@@ -110,6 +111,7 @@ impl Conversation {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn to_active_model(&self) -> conversation_model::ActiveModel {
         use sea_orm::ActiveValue::NotSet;
 
@@ -130,6 +132,7 @@ impl Conversation {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn set_id(mut self, id: i32) -> Self {
         self.id = id;
         self

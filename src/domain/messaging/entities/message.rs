@@ -92,6 +92,7 @@ impl Message {
     }
 
     /// Create a new outbound media message for queuing
+    #[allow(clippy::too_many_arguments)]
     pub fn new_outbound_media(
         conversation_id: i32,
         tenant_id: i32,
@@ -306,10 +307,11 @@ impl Message {
     }
 
     /// Reconstruct from database model with validation
+    #[allow(dead_code)]
     pub(crate) fn from_model(model: message_model::Model) -> Result<Self, MessagingError> {
-        let direction = MessageDirection::from_str(&model.direction)?;
-        let msg_type = MessageType::from_str(&model.msg_type)?;
-        let status = MessageStatus::from_str(&model.status)?;
+        let direction = MessageDirection::parse(&model.direction)?;
+        let msg_type = MessageType::parse(&model.msg_type)?;
+        let status = MessageStatus::parse(&model.status)?;
 
         // Enforce invariant: success status must have wa_message_id
         if status.requires_wa_message_id() && model.wa_message_id.is_none() {
@@ -347,6 +349,7 @@ impl Message {
         })
     }
 
+    #[allow(dead_code)]
     pub(crate) fn to_active_model(&self) -> message_model::ActiveModel {
         use sea_orm::ActiveValue::NotSet;
 
@@ -375,6 +378,7 @@ impl Message {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn set_id(mut self, id: i32) -> Self {
         self.id = id;
         self

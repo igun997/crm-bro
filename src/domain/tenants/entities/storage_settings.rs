@@ -14,6 +14,7 @@ pub struct StorageSettings {
 }
 
 impl StorageSettings {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         tenant_id: i32,
         endpoint: String,

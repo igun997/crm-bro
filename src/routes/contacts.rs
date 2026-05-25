@@ -476,7 +476,7 @@ async fn load_contact(
 }
 
 async fn contact_exists(db: &DatabaseConnection, tenant_id: i32, contact_id: i32) -> bool {
-    matches!(contact_service(db).get(contact_id, tenant_id).await, Ok(_))
+    (contact_service(db).get(contact_id, tenant_id).await).is_ok()
 }
 
 async fn user_belongs_to_tenant(db: &DatabaseConnection, tenant_id: i32, user_id: i32) -> bool {

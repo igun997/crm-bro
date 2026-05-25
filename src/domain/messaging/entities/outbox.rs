@@ -141,8 +141,9 @@ impl Outbox {
         self.updated_at
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_model(model: outbox_model::Model) -> Result<Self, MessagingError> {
-        let status = OutboxStatus::from_str(&model.status)?;
+        let status = OutboxStatus::parse(&model.status)?;
 
         Ok(Self {
             id: model.id,
@@ -159,6 +160,7 @@ impl Outbox {
         })
     }
 
+    #[allow(dead_code)]
     pub(crate) fn to_active_model(&self) -> outbox_model::ActiveModel {
         use sea_orm::ActiveValue::NotSet;
 
@@ -181,6 +183,7 @@ impl Outbox {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn set_id(mut self, id: i32) -> Self {
         self.id = id;
         self

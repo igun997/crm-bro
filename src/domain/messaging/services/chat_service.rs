@@ -90,6 +90,7 @@ impl<MR: MessageRepository, OR: OutboxRepository> ChatService<MR, OR> {
     }
 
     /// Queue a media message for sending
+    #[allow(clippy::too_many_arguments)]
     pub async fn queue_media(
         &self,
         tenant_id: i32,

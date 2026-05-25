@@ -30,6 +30,7 @@ impl<R: TenantRepository> TenantService<R> {
         self.repo.list_whatsapp_accounts(tenant_id).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_whatsapp_account(
         &self,
         tenant_id: i32,
@@ -61,6 +62,7 @@ impl<R: TenantRepository> TenantService<R> {
         self.repo.get_storage_config(tenant_id).await
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn create_storage_config(
         &self,
         tenant_id: i32,
