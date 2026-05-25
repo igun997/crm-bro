@@ -3,10 +3,10 @@ use futures_util::future::LocalBoxFuture;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use std::collections::HashSet;
 
+use crate::api::middleware::extract_bearer;
 use crate::auth::context::AuthContext;
 use crate::auth::jwt::decode_jwt;
 use crate::infrastructure::config::AppConfig;
-use crate::middleware::extract_bearer;
 use crate::models::{permission, role_permission, user, user_role};
 
 #[derive(Debug, Clone)]

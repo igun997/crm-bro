@@ -4,7 +4,6 @@ pub mod auth;
 pub mod common;
 pub mod domain;
 pub mod infrastructure;
-pub mod middleware;
 pub mod models;
 pub mod rbac;
 pub mod storage;
