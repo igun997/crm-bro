@@ -105,7 +105,9 @@ mod tests {
             .with(eq("628996926184"), eq(1))
             .times(1)
             .returning(|_, _| Ok(None));
-        repo.expect_save().times(1).returning(|contact| Ok(contact.clone()));
+        repo.expect_save()
+            .times(1)
+            .returning(|contact| Ok(contact.clone()));
 
         let service = ContactService::new(repo);
         let contact = service
