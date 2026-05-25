@@ -3,6 +3,8 @@ use crate::api::dto::contacts::{
     PatchContactRequest, TagResponse,
 };
 use crate::auth::CurrentUser;
+use crate::domain::contacts::repositories::SeaOrmContactRepository;
+use crate::domain::contacts::{Contact, ContactError, ContactService};
 use crate::models::{contact, contact_tag, tag, user};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use sea_orm::{
@@ -111,13 +113,17 @@ pub async fn get_contact(
     let Some(tenant_id) = current.0.tenant_id else {
         return tenant_required();
     };
-    match load_contact(db.get_ref(), tenant_id, path.into_inner()).await {
-        Ok(Some(contact)) => match contact_response(db.get_ref(), contact).await {
+    let service = contact_service(db.get_ref());
+    match service.get(path.into_inner(), tenant_id).await {
+        Ok(contact) => match domain_contact_response(db.get_ref(), contact).await {
             Ok(response) => HttpResponse::Ok().json(response),
             Err(response) => response,
         },
-        Ok(None) => not_found("Contact not found"),
-        Err(response) => response,
+        Err(ContactError::NotFound(_)) => not_found("Contact not found"),
+        Err(error) => {
+            tracing::error!(%error, "Failed to load contact");
+            server_error("Failed to load contact")
+        }
     }
 }
 
@@ -347,6 +353,25 @@ fn contact_to_response(contact: contact::Model, tags: Vec<TagResponse>) -> Conta
     }
 }
 
+fn domain_contact_to_response(contact: Contact, tags: Vec<TagResponse>) -> ContactResponse {
+    ContactResponse {
+        id: contact.id(),
+        tenant_id: contact.tenant_id(),
+        phone: contact.phone().to_owned(),
+        name: contact.name().map(str::to_owned),
+        email: contact.email().map(str::to_owned),
+        company: contact.company().map(str::to_owned),
+        notes: contact.notes().map(str::to_owned),
+        owner_user_id: contact.owner_user_id(),
+        tags,
+    }
+}
+
+fn contact_service(db: &DatabaseConnection) -> ContactService<SeaOrmContactRepository> {
+    let repo = SeaOrmContactRepository::new(db.clone());
+    ContactService::new(repo)
+}
+
 async fn contact_responses(
     db: &DatabaseConnection,
     contacts: Vec<contact::Model>,
@@ -364,6 +389,14 @@ async fn contact_response(
 ) -> Result<ContactResponse, HttpResponse> {
     let tags = tags_for_contact(db, contact.tenant_id, contact.id).await?;
     Ok(contact_to_response(contact, tags))
+}
+
+async fn domain_contact_response(
+    db: &DatabaseConnection,
+    contact: Contact,
+) -> Result<ContactResponse, HttpResponse> {
+    let tags = tags_for_contact(db, contact.tenant_id(), contact.id()).await?;
+    Ok(domain_contact_to_response(contact, tags))
 }
 
 async fn tags_for_contact(
@@ -443,7 +476,7 @@ async fn load_contact(
 }
 
 async fn contact_exists(db: &DatabaseConnection, tenant_id: i32, contact_id: i32) -> bool {
-    matches!(load_contact(db, tenant_id, contact_id).await, Ok(Some(_)))
+    matches!(contact_service(db).get(contact_id, tenant_id).await, Ok(_))
 }
 
 async fn user_belongs_to_tenant(db: &DatabaseConnection, tenant_id: i32, user_id: i32) -> bool {
@@ -565,7 +598,27 @@ mod tests {
     use crate::auth::jwt::{build_claims, encode_jwt};
     use crate::auth::password::hash_password;
     use crate::config::AppConfig;
+    use crate::domain::contacts::Contact;
     use crate::models::{contact, tenant, user};
+
+    #[test]
+    fn domain_contact_response_preserves_shape_with_tags() {
+        let contact = Contact::new(7, "Alice".into(), "628123456789".into()).unwrap();
+        let tags = vec![super::TagResponse {
+            id: 3,
+            tenant_id: 7,
+            name: "vip".into(),
+            color: Some("#16a34a".into()),
+        }];
+
+        let response = super::domain_contact_to_response(contact, tags);
+
+        assert_eq!(response.tenant_id, 7);
+        assert_eq!(response.phone, "628123456789");
+        assert_eq!(response.name.as_deref(), Some("Alice"));
+        assert_eq!(response.tags.len(), 1);
+        assert_eq!(response.tags[0].name, "vip");
+    }
 
     #[actix_rt::test]
     async fn contacts_and_tags_are_tenant_scoped() {
