@@ -5,7 +5,7 @@ use crm_bro::api::dto::contacts::{
 use crm_bro::api::routes;
 use crm_bro::infrastructure::config::AppConfig;
 use crm_bro::infrastructure::storage::StorageService;
-use crm_bro::ws;
+use crm_bro::infrastructure::websocket::ChatHub;
 
 use actix::Actor;
 use actix_cors::Cors;
@@ -120,7 +120,7 @@ async fn main() -> std::io::Result<()> {
     let media_dir = config.storage_local_dir.clone();
 
     // Start WebSocket hub
-    let hub = ws::hub::ChatHub::new().start();
+    let hub = ChatHub::new().start();
 
     HttpServer::new(move || {
         let cors = Cors::default()
@@ -138,7 +138,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(hub.clone()))
             .configure(routes::configure)
             .configure(routes::whatsapp_webhook::configure)
-            .configure(ws::configure)
+            .configure(routes::websocket::configure)
             .service(afiles::Files::new("/static", "./static").index_file("index.html"))
             .service(afiles::Files::new("/media", media_dir.clone()))
             .service(

@@ -3,7 +3,7 @@ use actix_web_actors::ws;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use super::hub::{ChatHub, ChatMessage, Connect, Disconnect};
+use crate::infrastructure::websocket::hub::{ChatHub, ChatMessage, Connect, Disconnect};
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);

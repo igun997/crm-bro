@@ -4,6 +4,7 @@ pub mod chat;
 pub mod contacts;
 pub mod health;
 pub mod settings;
+pub mod websocket;
 pub mod whatsapp_webhook;
 
 use actix_web::web;

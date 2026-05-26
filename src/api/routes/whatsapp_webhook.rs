@@ -3,8 +3,8 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 
 use crate::domain::messaging::MessageStatus;
 use crate::infrastructure::storage::StorageService;
+use crate::infrastructure::websocket::{ChatHub, ChatMessage as WsChatMessage};
 use crate::models::{contact, conversation, message, tenant_whatsapp_account};
-use crate::ws::hub::{ChatHub, ChatMessage as WsChatMessage};
 
 use crate::infrastructure::whatsapp::media;
 use crate::infrastructure::whatsapp::types::*;

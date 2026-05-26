@@ -1,6 +1,3 @@
-pub mod hub;
-pub mod session;
-
 use actix_web::web;
 use actix_web::{get, HttpRequest, HttpResponse};
 use actix_web_actors::ws;
@@ -8,8 +5,8 @@ use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::infrastructure::config::AppConfig;
 use crate::infrastructure::security::decode_jwt;
+use crate::infrastructure::websocket::{ChatHub, ChatSession};
 use crate::models::conversation;
-use hub::ChatHub;
 
 /// WebSocket endpoint for global updates (all new messages)
 #[get("/ws/updates")]
@@ -20,7 +17,7 @@ pub async fn ws_updates(
     config: web::Data<AppConfig>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let tenant_id = tenant_id_from_request(&req, &config)?;
-    let session = session::ChatSession::new(hub.get_ref().clone(), tenant_id, None);
+    let session = ChatSession::new(hub.get_ref().clone(), tenant_id, None);
     ws::start(session, &req, stream)
 }
 
@@ -37,8 +34,7 @@ pub async fn ws_chat(
     let conversation_id = path.into_inner();
     let tenant_id = tenant_id_from_request(&req, &config)?;
     ensure_conversation_tenant(db.get_ref(), conversation_id, tenant_id).await?;
-    let session =
-        session::ChatSession::new(hub.get_ref().clone(), tenant_id, Some(conversation_id));
+    let session = ChatSession::new(hub.get_ref().clone(), tenant_id, Some(conversation_id));
     ws::start(session, &req, stream)
 }
 
