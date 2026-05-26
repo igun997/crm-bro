@@ -1,8 +1,10 @@
 pub mod entities;
 pub mod errors;
+pub mod permissions;
 
 pub use entities::User;
 pub use errors::AuthError;
+pub use permissions::*;
 
 #[cfg(test)]
 mod tests {

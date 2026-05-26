@@ -3,13 +3,13 @@ use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Database, EntityTrait, QueryFilter, QueryOrder,
 };
 
+use crm_bro::domain::auth::permissions::{roles, PERMISSIONS, SUPERADMIN_ROLE};
 use crm_bro::infrastructure::security::hash_password;
 use crm_bro::models::permission;
 use crm_bro::models::role;
 use crm_bro::models::role_permission;
 use crm_bro::models::user;
 use crm_bro::models::user_role;
-use crm_bro::rbac::{roles, PERMISSIONS, SUPERADMIN_ROLE};
 
 /// Seed a superadmin user into the database.
 #[derive(Parser, Debug)]

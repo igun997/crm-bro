@@ -6,12 +6,13 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::middleware::CurrentUser;
+use crate::application::auth::require_permission;
+use crate::domain::auth::permissions;
 use crate::domain::tenants::{
     SeaOrmTenantRepository, StorageSettings, TenantService, WhatsAppSettings,
 };
 use crate::infrastructure::config::AppConfig;
 use crate::models::{tenant, tenant_storage_config, tenant_whatsapp_account};
-use crate::rbac::{permissions, require_permission};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[schema(example = json!({
@@ -559,11 +560,11 @@ mod tests {
     };
 
     use super::mask_token;
+    use crate::domain::auth::permissions;
     use crate::infrastructure::config::AppConfig;
     use crate::infrastructure::security::hash_password;
     use crate::infrastructure::security::{build_claims, encode_jwt};
     use crate::models::{permission, role, role_permission, tenant, user, user_role};
-    use crate::rbac::permissions;
 
     #[test]
     fn masks_long_access_token() {

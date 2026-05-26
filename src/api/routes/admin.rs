@@ -7,10 +7,10 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::middleware::CurrentUser;
+use crate::domain::auth::permissions::{self as permission_codes, default_tenant_roles};
 use crate::domain::tenants::{SeaOrmTenantRepository, TenantService};
 use crate::infrastructure::security::hash_password;
 use crate::models::{permission, role, role_permission, tenant, user, user_role};
-use crate::rbac::{default_tenant_roles, permissions as permission_codes};
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[schema(example = json!({"name": "Acme Corp", "slug": "acme"}))]
@@ -774,7 +774,7 @@ async fn attach_default_role(
 ) -> Result<(), sea_orm::DbErr> {
     let Some(default_role) = role::Entity::find()
         .filter(role::Column::TenantId.eq(tenant_id))
-        .filter(role::Column::Name.eq(crate::rbac::roles::AGENT))
+        .filter(role::Column::Name.eq(crate::domain::auth::permissions::roles::AGENT))
         .order_by_asc(role::Column::Id)
         .one(db)
         .await?
