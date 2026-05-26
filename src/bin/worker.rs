@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use crm_bro::infrastructure::config::AppConfig;
+use crm_bro::infrastructure::whatsapp::WhatsAppSender;
 use crm_bro::models::{message, outbox_message, tenant_whatsapp_account};
-use crm_bro::whatsapp::sender::WhatsAppSender;
 use sea_orm::sea_query::Expr;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, Database, DatabaseConnection, EntityTrait, QueryFilter,

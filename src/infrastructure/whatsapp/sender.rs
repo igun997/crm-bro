@@ -2,7 +2,7 @@
 use reqwest::multipart;
 use reqwest::Client;
 
-use super::types::*;
+use crate::infrastructure::whatsapp::types::*;
 
 pub struct WhatsAppSender {
     client: Client,

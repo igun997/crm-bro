@@ -5,7 +5,6 @@ use crm_bro::api::dto::contacts::{
 use crm_bro::api::routes;
 use crm_bro::infrastructure::config::AppConfig;
 use crm_bro::infrastructure::storage::StorageService;
-use crm_bro::whatsapp;
 use crm_bro::ws;
 
 use actix::Actor;
@@ -138,7 +137,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(storage.clone()))
             .app_data(web::Data::new(hub.clone()))
             .configure(routes::configure)
-            .configure(whatsapp::webhook::configure)
+            .configure(routes::whatsapp_webhook::configure)
             .configure(ws::configure)
             .service(afiles::Files::new("/static", "./static").index_file("index.html"))
             .service(afiles::Files::new("/media", media_dir.clone()))

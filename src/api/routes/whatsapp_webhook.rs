@@ -6,8 +6,8 @@ use crate::infrastructure::storage::StorageService;
 use crate::models::{contact, conversation, message, tenant_whatsapp_account};
 use crate::ws::hub::{ChatHub, ChatMessage as WsChatMessage};
 
-use super::media;
-use super::types::*;
+use crate::infrastructure::whatsapp::media;
+use crate::infrastructure::whatsapp::types::*;
 
 #[derive(serde::Deserialize)]
 pub struct WebhookPath {
