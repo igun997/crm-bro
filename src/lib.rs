@@ -4,6 +4,5 @@ pub mod common;
 pub mod domain;
 pub mod infrastructure;
 pub mod models;
-pub mod storage;
 pub mod whatsapp;
 pub mod ws;

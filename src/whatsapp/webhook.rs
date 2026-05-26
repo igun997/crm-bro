@@ -2,8 +2,8 @@ use actix_web::{get, post, web, HttpResponse};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 use crate::domain::messaging::MessageStatus;
+use crate::infrastructure::storage::StorageService;
 use crate::models::{contact, conversation, message, tenant_whatsapp_account};
-use crate::storage::StorageService;
 use crate::ws::hub::{ChatHub, ChatMessage as WsChatMessage};
 
 use super::media;
