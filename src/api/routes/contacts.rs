@@ -3,13 +3,13 @@ use crate::api::dto::contacts::{
     PatchContactRequest, TagResponse,
 };
 use crate::api::middleware::CurrentUser;
+use crate::application::contacts::{list_contacts as list_contacts_use_case, ListContactsInput};
 use crate::domain::contacts::repositories::SeaOrmContactRepository;
 use crate::domain::contacts::{Contact, ContactError, ContactService};
 use crate::infrastructure::persistence::models::{contact, contact_tag, tag, user};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
-    PaginatorTrait, QueryFilter,
+    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
 
 #[utoipa::path(
@@ -31,67 +31,32 @@ pub async fn list_contacts(
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).clamp(1, 100);
 
-    let mut condition = Condition::all().add(contact::Column::TenantId.eq(tenant_id));
-    if let Some(owner_user_id) = query.owner_user_id {
-        condition = condition.add(contact::Column::OwnerUserId.eq(owner_user_id));
-    }
-    if let Some(q) = query.q.as_ref().filter(|q| !q.trim().is_empty()) {
-        let pattern = format!("%{}%", q.trim());
-        condition = condition.add(
-            Condition::any()
-                .add(contact::Column::Phone.like(pattern.clone()))
-                .add(contact::Column::Name.like(pattern.clone()))
-                .add(contact::Column::Email.like(pattern.clone()))
-                .add(contact::Column::Company.like(pattern.clone()))
-                .add(contact::Column::Notes.like(pattern)),
-        );
-    }
-
-    let tag_contact_ids =
-        if let Some(tag_name) = query.tag.as_ref().filter(|name| !name.trim().is_empty()) {
-            match contact_ids_for_tag(db.get_ref(), tenant_id, tag_name.trim()).await {
-                Ok(ids) => Some(ids),
-                Err(response) => return response,
-            }
-        } else {
-            None
-        };
-    if let Some(ids) = tag_contact_ids {
-        if ids.is_empty() {
-            return HttpResponse::Ok().json(PaginatedContacts {
-                data: vec![],
-                page,
-                per_page,
-                total: 0,
-            });
-        }
-        condition = condition.add(contact::Column::Id.is_in(ids));
-    }
-
-    let paginator = contact::Entity::find()
-        .filter(condition)
-        .paginate(db.get_ref(), per_page);
-    let total = match paginator.num_items().await {
-        Ok(total) => total,
-        Err(error) => {
-            tracing::error!(%error, "Failed to count contacts");
-            return server_error("Failed to list contacts");
-        }
-    };
-    let contacts = match paginator.fetch_page(page - 1).await {
-        Ok(contacts) => contacts,
-        Err(error) => {
-            tracing::error!(%error, "Failed to fetch contacts");
-            return server_error("Failed to list contacts");
-        }
-    };
-
-    match contact_responses(db.get_ref(), contacts).await {
-        Ok(data) => HttpResponse::Ok().json(PaginatedContacts {
-            data,
+    let output = match list_contacts_use_case(
+        db.get_ref(),
+        ListContactsInput {
+            tenant_id,
+            q: query.q.clone(),
+            tag: query.tag.clone(),
+            owner_user_id: query.owner_user_id,
             page,
             per_page,
-            total,
+        },
+    )
+    .await
+    {
+        Ok(output) => output,
+        Err(error) => {
+            tracing::error!(%error, "Failed to list contacts");
+            return server_error("Failed to list contacts");
+        }
+    };
+
+    match contact_responses(db.get_ref(), output.contacts).await {
+        Ok(data) => HttpResponse::Ok().json(PaginatedContacts {
+            data,
+            page: output.page,
+            per_page: output.per_page,
+            total: output.total,
         }),
         Err(response) => response,
     }
@@ -429,34 +394,6 @@ async fn tags_for_contact(
             server_error("Failed to load tags")
         })?;
     Ok(tags.into_iter().map(tag_response).collect())
-}
-
-async fn contact_ids_for_tag(
-    db: &DatabaseConnection,
-    tenant_id: i32,
-    tag_name: &str,
-) -> Result<Vec<i32>, HttpResponse> {
-    let tag = tag::Entity::find()
-        .filter(tag::Column::TenantId.eq(tenant_id))
-        .filter(tag::Column::Name.eq(tag_name))
-        .one(db)
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "Failed to load tag filter");
-            server_error("Failed to list contacts")
-        })?;
-    let Some(tag) = tag else {
-        return Ok(vec![]);
-    };
-    let links = contact_tag::Entity::find()
-        .filter(contact_tag::Column::TagId.eq(tag.id))
-        .all(db)
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "Failed to load tag contacts");
-            server_error("Failed to list contacts")
-        })?;
-    Ok(links.into_iter().map(|link| link.contact_id).collect())
 }
 
 async fn load_contact(
