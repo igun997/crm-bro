@@ -2,19 +2,21 @@ use actix_multipart::Multipart;
 use actix_web::{get, post, web, HttpResponse};
 use bytes::Bytes;
 use futures_util::StreamExt;
-use sea_orm::{
-    ActiveModelTrait, ColumnTrait, Condition, DatabaseConnection, EntityTrait, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set,
-};
+use sea_orm::{ActiveModelTrait, DatabaseConnection, Set};
 use serde::{Deserialize, Serialize};
 use utoipa::{IntoParams, ToSchema};
 
 use crate::api::middleware::CurrentUser;
 use crate::application::auth::require_permission;
-use crate::domain::auth::permissions;
-use crate::infrastructure::persistence::models::{
-    contact, conversation, message, outbox_message, tenant_whatsapp_account,
+use crate::application::messaging::{
+    active_whatsapp_account_id, cleanup_message, create_outbox, create_queued_message,
+    ensure_contact_conversation, get_messages_by_phone as get_messages_by_phone_use_case,
+    list_conversations as list_conversations_use_case, queue_send as queue_send_use_case,
+    search_messages as search_messages_use_case, ListConversationsInput, ListMessagesInput,
+    QueueSendInput, SearchMessagesInput,
 };
+use crate::domain::auth::permissions;
+use crate::infrastructure::persistence::models::{conversation, message};
 use crate::infrastructure::storage::StorageService;
 
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
@@ -178,41 +180,34 @@ pub async fn list_conversations(
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).min(100);
 
-    let mut condition = Condition::all().add(conversation::Column::TenantId.eq(tenant_id));
-    if let Some(ref phone) = query.phone {
-        condition = condition.add(conversation::Column::ContactPhone.contains(phone));
+    match list_conversations_use_case(
+        db.get_ref(),
+        ListConversationsInput {
+            tenant_id,
+            phone: query.phone.clone(),
+            name: query.name.clone(),
+            page,
+            per_page,
+        },
+    )
+    .await
+    {
+        Ok(output) => HttpResponse::Ok().json(PaginatedConversations {
+            success: true,
+            data: output
+                .conversations
+                .into_iter()
+                .map(conversation_response)
+                .collect(),
+            page: output.page,
+            per_page: output.per_page,
+            total: output.total,
+        }),
+        Err(error) => send_error(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Failed to list conversations: {error}"),
+        ),
     }
-    if let Some(ref name) = query.name {
-        condition = condition.add(conversation::Column::ContactName.contains(name));
-    }
-
-    let total = conversation::Entity::find()
-        .filter(condition.clone())
-        .count(db.get_ref())
-        .await
-        .unwrap_or(0);
-
-    let conversations = conversation::Entity::find()
-        .filter(condition)
-        .order_by_desc(conversation::Column::LastMessageAt)
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all(db.get_ref())
-        .await
-        .unwrap_or_default();
-
-    let data = conversations
-        .into_iter()
-        .map(conversation_response)
-        .collect();
-
-    HttpResponse::Ok().json(PaginatedConversations {
-        success: true,
-        data,
-        page,
-        per_page,
-        total,
-    })
 }
 
 /// Get messages for a conversation by phone number
@@ -245,51 +240,35 @@ pub async fn get_messages_by_phone(
         Err(response) => return response,
     };
 
-    let conv = conversation::Entity::find()
-        .filter(conversation::Column::TenantId.eq(tenant_id))
-        .filter(conversation::Column::ContactPhone.eq(phone.as_str()))
-        .one(db.get_ref())
-        .await
-        .unwrap_or(None);
-
-    let conv = match conv {
-        Some(c) => c,
-        None => {
-            return HttpResponse::NotFound().json(serde_json::json!({
-                "success": false, "error": "Conversation not found"
-            }));
-        }
-    };
-
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(50).min(100);
 
-    let condition = Condition::all()
-        .add(message::Column::TenantId.eq(tenant_id))
-        .add(message::Column::ConversationId.eq(conv.id));
-
-    let total = message::Entity::find()
-        .filter(condition.clone())
-        .count(db.get_ref())
-        .await
-        .unwrap_or(0);
-
-    let messages = message::Entity::find()
-        .filter(condition)
-        .order_by_asc(message::Column::Timestamp)
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all(db.get_ref())
-        .await
-        .unwrap_or_default();
-
-    HttpResponse::Ok().json(PaginatedMessages {
-        success: true,
-        data: messages.into_iter().map(message_response).collect(),
-        page,
-        per_page,
-        total,
-    })
+    match get_messages_by_phone_use_case(
+        db.get_ref(),
+        ListMessagesInput {
+            tenant_id,
+            phone: phone.into_inner(),
+            page,
+            per_page,
+        },
+    )
+    .await
+    {
+        Ok(Some(output)) => HttpResponse::Ok().json(PaginatedMessages {
+            success: true,
+            data: output.messages.into_iter().map(message_response).collect(),
+            page: output.page,
+            per_page: output.per_page,
+            total: output.total,
+        }),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "success": false, "error": "Conversation not found"
+        })),
+        Err(error) => send_error(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Failed to list messages: {error}"),
+        ),
+    }
 }
 
 /// Search messages across all conversations
@@ -320,52 +299,30 @@ pub async fn search_messages(
     let page = query.page.unwrap_or(1).max(1);
     let per_page = query.per_page.unwrap_or(20).min(100);
 
-    let mut condition = Condition::all()
-        .add(message::Column::TenantId.eq(tenant_id))
-        .add(message::Column::Body.contains(&query.q));
-
-    if let Some(ref phone) = query.phone {
-        let conv = conversation::Entity::find()
-            .filter(conversation::Column::TenantId.eq(tenant_id))
-            .filter(conversation::Column::ContactPhone.eq(phone.as_str()))
-            .one(db.get_ref())
-            .await
-            .unwrap_or(None);
-        if let Some(c) = conv {
-            condition = condition.add(message::Column::ConversationId.eq(c.id));
-        } else {
-            return HttpResponse::Ok().json(PaginatedMessages {
-                success: true,
-                data: vec![],
-                page,
-                per_page,
-                total: 0,
-            });
-        }
+    match search_messages_use_case(
+        db.get_ref(),
+        SearchMessagesInput {
+            tenant_id,
+            q: query.q.clone(),
+            phone: query.phone.clone(),
+            page,
+            per_page,
+        },
+    )
+    .await
+    {
+        Ok(output) => HttpResponse::Ok().json(PaginatedMessages {
+            success: true,
+            data: output.messages.into_iter().map(message_response).collect(),
+            page: output.page,
+            per_page: output.per_page,
+            total: output.total,
+        }),
+        Err(error) => send_error(
+            actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            &format!("Failed to search messages: {error}"),
+        ),
     }
-
-    let total = message::Entity::find()
-        .filter(condition.clone())
-        .count(db.get_ref())
-        .await
-        .unwrap_or(0);
-
-    let messages = message::Entity::find()
-        .filter(condition)
-        .order_by_desc(message::Column::Timestamp)
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all(db.get_ref())
-        .await
-        .unwrap_or_default();
-
-    HttpResponse::Ok().json(PaginatedMessages {
-        success: true,
-        data: messages.into_iter().map(message_response).collect(),
-        page,
-        per_page,
-        total,
-    })
 }
 
 /// Queue a text message
@@ -632,7 +589,10 @@ pub async fn send_upload(
         Ok(stored) => stored,
         Err(error) => {
             cleanup_message(db.get_ref(), msg.id).await;
-            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error);
+            return send_error(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                &error.to_string(),
+            );
         }
     };
 
@@ -674,7 +634,10 @@ pub async fn send_upload(
         Ok(outbox) => outbox,
         Err(error) => {
             cleanup_message(db.get_ref(), msg.id).await;
-            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error);
+            return send_error(
+                actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+                &error.to_string(),
+            );
         }
     };
 
@@ -697,7 +660,7 @@ async fn queue_send(
     body: Option<String>,
     template_name: Option<String>,
     media_url: Option<String>,
-    mut payload: serde_json::Value,
+    payload: serde_json::Value,
 ) -> HttpResponse {
     let ctx = current.0;
     if let Err(response) = require_permission(&ctx, permissions::CHATS_SEND) {
@@ -708,201 +671,30 @@ async fn queue_send(
         Err(response) => return response,
     };
 
-    let account_id = match active_whatsapp_account_id(db, tenant_id).await {
-        Ok(account_id) => account_id,
-        Err(error) => return send_error(actix_web::http::StatusCode::BAD_REQUEST, &error),
-    };
-    let (contact, conv) = match ensure_contact_conversation(db, tenant_id, phone).await {
-        Ok(pair) => pair,
-        Err(error) => {
-            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error)
-        }
-    };
-    payload["whatsapp_account_id"] = serde_json::json!(account_id);
-
-    let now = chrono::Utc::now().naive_utc();
-    let msg = match create_queued_message(
+    match queue_send_use_case(
         db,
-        tenant_id,
-        contact.id,
-        conv.id,
-        msg_type,
-        body,
-        template_name,
-        media_url,
-        None,
-        None,
-        None,
-        now,
+        QueueSendInput {
+            tenant_id,
+            phone: phone.to_string(),
+            msg_type: msg_type.to_string(),
+            body,
+            template_name,
+            media_url,
+            payload,
+        },
     )
     .await
     {
-        Ok(msg) => msg,
-        Err(error) => {
-            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error)
-        }
-    };
-
-    let kind = if msg_type == "template" {
-        "send_template"
-    } else if msg_type == "text" {
-        "send_text"
-    } else {
-        "send_media"
-    };
-    let outbox = match create_outbox(db, tenant_id, msg.id, kind, payload).await {
-        Ok(outbox) => outbox,
-        Err(error) => {
-            cleanup_message(db, msg.id).await;
-            return send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error);
-        }
-    };
-
-    HttpResponse::Ok().json(SendResponse {
-        success: true,
-        message_id: Some(msg.id),
-        outbox_id: Some(outbox.id),
-        status: Some("queued".to_string()),
-        wa_message_id: None,
-        error: None,
-    })
-}
-
-async fn ensure_contact_conversation(
-    db: &DatabaseConnection,
-    tenant_id: i32,
-    phone: &str,
-) -> Result<(contact::Model, conversation::Model), String> {
-    let contact = match contact::Entity::find()
-        .filter(contact::Column::TenantId.eq(tenant_id))
-        .filter(contact::Column::Phone.eq(phone))
-        .one(db)
-        .await
-        .map_err(|error| format!("DB query contact: {error}"))?
-    {
-        Some(contact) => contact,
-        None => contact::ActiveModel {
-            tenant_id: Set(tenant_id),
-            phone: Set(phone.to_string()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .map_err(|error| format!("DB insert contact: {error}"))?,
-    };
-
-    let conv = match conversation::Entity::find()
-        .filter(conversation::Column::TenantId.eq(tenant_id))
-        .filter(conversation::Column::ContactId.eq(contact.id))
-        .one(db)
-        .await
-        .map_err(|error| format!("DB query conversation: {error}"))?
-    {
-        Some(conv) => conv,
-        None => conversation::ActiveModel {
-            tenant_id: Set(Some(tenant_id)),
-            contact_id: Set(Some(contact.id)),
-            contact_phone: Set(phone.to_string()),
-            contact_name: Set(contact.name.clone()),
-            ..Default::default()
-        }
-        .insert(db)
-        .await
-        .map_err(|error| format!("DB insert conversation: {error}"))?,
-    };
-
-    Ok((contact, conv))
-}
-
-async fn cleanup_message(db: &DatabaseConnection, message_id: i32) {
-    if let Err(error) = message::Entity::delete_by_id(message_id).exec(db).await {
-        tracing::error!(%error, message_id, "Failed to clean up queued message");
+        Ok(output) => HttpResponse::Ok().json(SendResponse {
+            success: true,
+            message_id: Some(output.message_id),
+            outbox_id: Some(output.outbox_id),
+            status: Some("queued".to_string()),
+            wa_message_id: None,
+            error: None,
+        }),
+        Err(error) => send_error(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR, &error),
     }
-}
-
-async fn active_whatsapp_account_id(
-    db: &DatabaseConnection,
-    tenant_id: i32,
-) -> Result<i32, String> {
-    tenant_whatsapp_account::Entity::find()
-        .filter(tenant_whatsapp_account::Column::TenantId.eq(tenant_id))
-        .filter(tenant_whatsapp_account::Column::IsActive.eq(true))
-        .one(db)
-        .await
-        .map_err(|error| format!("DB query WhatsApp account: {error}"))?
-        .map(|account| account.id)
-        .ok_or_else(|| "No active WhatsApp account configured".to_string())
-}
-
-#[allow(clippy::too_many_arguments)]
-async fn create_queued_message(
-    db: &DatabaseConnection,
-    tenant_id: i32,
-    contact_id: i32,
-    conversation_id: i32,
-    msg_type: &str,
-    body: Option<String>,
-    template_name: Option<String>,
-    media_url: Option<String>,
-    storage_key: Option<String>,
-    original_filename: Option<String>,
-    size_bytes: Option<i64>,
-    now: chrono::NaiveDateTime,
-) -> Result<message::Model, String> {
-    let msg = message::ActiveModel {
-        conversation_id: Set(conversation_id),
-        wa_message_id: Set(None),
-        direction: Set("outbound".to_string()),
-        msg_type: Set(msg_type.to_string()),
-        body: Set(body),
-        media_url: Set(media_url),
-        media_mime: Set(None),
-        template_name: Set(template_name),
-        status: Set("queued".to_string()),
-        timestamp: Set(now),
-        tenant_id: Set(Some(tenant_id)),
-        contact_id: Set(Some(contact_id)),
-        storage_key: Set(storage_key),
-        original_filename: Set(original_filename),
-        size_bytes: Set(size_bytes),
-        ..Default::default()
-    }
-    .insert(db)
-    .await
-    .map_err(|error| format!("DB insert queued message: {error}"))?;
-
-    if let Ok(Some(conv)) = conversation::Entity::find_by_id(conversation_id)
-        .one(db)
-        .await
-    {
-        let mut update: conversation::ActiveModel = conv.into();
-        update.last_message_at = Set(Some(now));
-        let _ = update.update(db).await;
-    }
-
-    Ok(msg)
-}
-
-async fn create_outbox(
-    db: &DatabaseConnection,
-    tenant_id: i32,
-    message_id: i32,
-    kind: &str,
-    payload_json: serde_json::Value,
-) -> Result<outbox_message::Model, String> {
-    outbox_message::ActiveModel {
-        tenant_id: Set(tenant_id),
-        message_id: Set(message_id),
-        kind: Set(kind.to_string()),
-        payload_json: Set(payload_json),
-        status: Set("pending".to_string()),
-        attempts: Set(0),
-        next_attempt_at: Set(chrono::Utc::now().naive_utc()),
-        ..Default::default()
-    }
-    .insert(db)
-    .await
-    .map_err(|error| format!("DB insert outbox: {error}"))
 }
 
 fn require_tenant(ctx: &crate::api::middleware::AuthContext) -> Result<i32, HttpResponse> {
