@@ -231,42 +231,52 @@ See [Docker Deployment](#docker-deployment-recommended) for full variable refere
 
 ## Architecture
 
+CRM Bro uses full DDD-style layering. See [`docs/architecture/ddd-layers.md`](docs/architecture/ddd-layers.md) for layer rules and guard tests.
+
 ```
 src/
 ├── api/
-│   ├── dto/           # HTTP request/response DTOs
-│   │   └── contacts.rs
-│   └── routes/        # HTTP handlers
-│       ├── admin.rs   # Tenant/user/role management
-│       ├── auth.rs    # Login
-│       ├── chat.rs    # Chat API
-│       ├── contacts.rs # Contacts & tags
-│       ├── health.rs  # Health check
-│       └── settings.rs # WhatsApp/storage settings
-├── common/            # Re-exports shared infrastructure
+│   ├── dto/            # HTTP request/response DTOs
+│   ├── middleware/     # Actix auth context/extractors
+│   ├── responses.rs    # HTTP response helpers
+│   └── routes/         # HTTP/WebSocket handlers
+│       ├── admin.rs    # Tenant/user/role management
+│       ├── auth.rs     # Login
+│       ├── chat.rs     # Chat API transport mapping
+│       ├── contacts.rs # Contacts & tags transport mapping
+│       ├── health.rs   # Health check
+│       ├── settings.rs # WhatsApp/storage settings transport mapping
+│       ├── websocket.rs
+│       └── whatsapp_webhook.rs
+├── application/
+│   ├── auth/           # RBAC enforcement use cases
+│   ├── contacts/       # Contact query/filter use cases
+│   ├── messaging/      # Chat send/list/search and webhook use cases
+│   ├── storage/
+│   └── tenants/        # Settings use cases
 ├── domain/
-│   ├── auth/          # User entity & factory
-│   ├── contacts/      # Entity, repository, service
-│   ├── messaging/     # Message/Conversation/Outbox state machine
-│   ├── storage/       # StorageConfigFactory
-│   └── tenants/       # Tenant, WhatsApp, Storage settings
-├── auth/              # JWT, password hashing, extractor
+│   ├── auth/           # User, role, permission rules
+│   ├── contacts/       # Contact entities/services/errors
+│   ├── messaging/      # Message/Conversation/Outbox invariants
+│   ├── storage/        # Storage settings rules
+│   └── tenants/        # Tenant/WhatsApp/storage entities
+├── infrastructure/
+│   ├── config/         # AppConfig
+│   ├── persistence/    # SeaORM models
+│   ├── security/       # JWT/password hashing
+│   ├── storage/        # Local/R2 object storage
+│   ├── whatsapp/       # Meta sender/media/types
+│   └── websocket/      # WebSocket actors
 ├── bin/
-│   ├── seed_admin.rs  # Superadmin seeder CLI
-│   └── worker.rs      # Outbox message worker
-├── config/            # App configuration
-├── middleware/        # Token validation
-├── models/            # SeaORM persistence entities
-├── rbac/              # Role/permission constants & helpers
-├── storage/           # Local/R2 storage abstraction
-├── whatsapp/          # Meta API client, webhook, media
-├── ws/                # WebSocket hub & sessions
+│   ├── seed_admin.rs   # Superadmin seeder CLI
+│   └── worker.rs       # Outbox message worker
 ├── lib.rs
-├── main.rs
-└── response.rs
-migrations/            # SQL migrations
-static/                # Dev chat UI
+└── main.rs
+migrations/             # SQL migrations
+static/                 # Dev chat UI
 ```
+
+Architecture guards live in `tests/architecture_layers.rs` and prevent legacy top-level modules from returning.
 
 ## Releases
 
