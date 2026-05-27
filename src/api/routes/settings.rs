@@ -1,20 +1,22 @@
 use actix_web::{get, patch, post, web, HttpResponse};
-use sea_orm::{
-    ActiveModelTrait, ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
-};
+use sea_orm::DatabaseConnection;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::api::middleware::CurrentUser;
 use crate::application::auth::require_permission;
+use crate::application::tenants::{
+    create_storage_config as create_storage_config_use_case,
+    create_whatsapp_account as create_whatsapp_account_use_case,
+    get_storage_config as get_storage_config_use_case,
+    list_whatsapp_accounts as list_whatsapp_accounts_use_case,
+    update_storage_config as update_storage_config_use_case,
+    update_whatsapp_account as update_whatsapp_account_use_case, CreateStorageConfigInput,
+    CreateWhatsAppAccountInput, PatchStorageConfigInput, PatchWhatsAppAccountInput,
+};
 use crate::domain::auth::permissions;
-use crate::domain::tenants::{
-    SeaOrmTenantRepository, StorageSettings, TenantService, WhatsAppSettings,
-};
+use crate::domain::tenants::{StorageSettings, WhatsAppSettings};
 use crate::infrastructure::config::AppConfig;
-use crate::infrastructure::persistence::models::{
-    tenant, tenant_storage_config, tenant_whatsapp_account,
-};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[schema(example = json!({
@@ -148,18 +150,13 @@ pub async fn list_whatsapp_accounts(
         return forbidden("Tenant context required");
     };
 
-    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
-    let tenant = match service.get_tenant(tenant_id).await {
-        Ok(tenant) => tenant,
-        Err(_) => return server_error("Tenant not found"),
-    };
-
-    match service.list_whatsapp_accounts(tenant_id).await {
-        Ok(accounts) => HttpResponse::Ok().json(
-            accounts
+    match list_whatsapp_accounts_use_case(db.get_ref(), tenant_id).await {
+        Ok(result) => HttpResponse::Ok().json(
+            result
+                .accounts
                 .into_iter()
                 .map(|account| {
-                    build_account_response(&account, tenant.slug(), &config.app_base_url)
+                    build_account_response(&account, &result.tenant_slug, &config.app_base_url)
                 })
                 .collect::<Vec<_>>(),
         ),
@@ -192,28 +189,24 @@ pub async fn create_whatsapp_account(
         return forbidden("Tenant context required");
     };
 
-    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
-    let tenant = match service.get_tenant(tenant_id).await {
-        Ok(tenant) => tenant,
-        Err(_) => return server_error("Tenant not found"),
-    };
-
-    match service
-        .create_whatsapp_account(
+    match create_whatsapp_account_use_case(
+        db.get_ref(),
+        CreateWhatsAppAccountInput {
             tenant_id,
-            body.phone_number_id.clone(),
-            body.business_account_id.clone(),
-            body.display_phone_number.clone(),
-            body.access_token.clone(),
-            body.verify_token.clone(),
-            body.api_version.clone(),
-            body.is_active.unwrap_or(true),
-        )
-        .await
+            phone_number_id: body.phone_number_id.clone(),
+            business_account_id: body.business_account_id.clone(),
+            display_phone_number: body.display_phone_number.clone(),
+            access_token: body.access_token.clone(),
+            verify_token: body.verify_token.clone(),
+            api_version: body.api_version.clone(),
+            is_active: body.is_active.unwrap_or(true),
+        },
+    )
+    .await
     {
-        Ok(account) => HttpResponse::Ok().json(build_account_response(
-            &account,
-            tenant.slug(),
+        Ok(result) => HttpResponse::Ok().json(build_account_response(
+            &result.account,
+            &result.tenant_slug,
             &config.app_base_url,
         )),
         Err(error) => {
@@ -250,70 +243,31 @@ pub async fn update_whatsapp_account(
         return forbidden("Tenant context required");
     };
 
-    let tenant = match tenant::Entity::find_by_id(tenant_id)
-        .one(db.get_ref())
-        .await
+    match update_whatsapp_account_use_case(
+        db.get_ref(),
+        PatchWhatsAppAccountInput {
+            id: path.into_inner(),
+            tenant_id,
+            phone_number_id: body.phone_number_id.clone(),
+            business_account_id: body.business_account_id.clone(),
+            display_phone_number: body.display_phone_number.clone(),
+            access_token: body.access_token.clone(),
+            verify_token: body.verify_token.clone(),
+            api_version: body.api_version.clone(),
+            is_active: body.is_active,
+        },
+    )
+    .await
     {
-        Ok(Some(tenant)) => tenant,
-        Ok(None) => return server_error("Tenant not found"),
-        Err(error) => {
-            tracing::error!(%error, "Failed to load tenant");
-            return server_error("Failed to load tenant");
-        }
-    };
-
-    let id = path.into_inner();
-    let account = match tenant_whatsapp_account::Entity::find()
-        .filter(tenant_whatsapp_account::Column::Id.eq(id))
-        .filter(tenant_whatsapp_account::Column::TenantId.eq(tenant_id))
-        .one(db.get_ref())
-        .await
-    {
-        Ok(Some(account)) => account,
-        Ok(None) => {
-            return HttpResponse::NotFound().json(serde_json::json!({
-                "success": false,
-                "error": "WhatsApp settings not found"
-            }));
-        }
-        Err(error) => {
-            tracing::error!(%error, "Failed to load WhatsApp account");
-            return server_error("Failed to load WhatsApp settings");
-        }
-    };
-
-    let mut active: tenant_whatsapp_account::ActiveModel = account.into();
-    if let Some(value) = &body.phone_number_id {
-        active.phone_number_id = Set(value.clone());
-    }
-    if let Some(value) = &body.business_account_id {
-        active.business_account_id = Set(value.clone());
-    }
-    if let Some(value) = &body.display_phone_number {
-        active.display_phone_number = Set(Some(value.clone()));
-    }
-    if let Some(value) = &body.access_token {
-        active.access_token = Set(value.clone());
-    }
-    if let Some(value) = &body.verify_token {
-        active.verify_token = Set(value.clone());
-    }
-    if let Some(value) = &body.api_version {
-        active.api_version = Set(value.clone());
-    }
-    if let Some(value) = body.is_active {
-        active.is_active = Set(value);
-    }
-
-    match active.update(db.get_ref()).await {
-        Ok(account) => {
-            let account = account_entity_from_model(account);
-            HttpResponse::Ok().json(build_account_response(
-                &account,
-                &tenant.slug,
-                &config.app_base_url,
-            ))
-        }
+        Ok(Some(result)) => HttpResponse::Ok().json(build_account_response(
+            &result.account,
+            &result.tenant_slug,
+            &config.app_base_url,
+        )),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "success": false,
+            "error": "WhatsApp settings not found"
+        })),
         Err(error) => {
             tracing::error!(%error, "Failed to update WhatsApp account");
             server_error("Failed to update WhatsApp settings")
@@ -341,8 +295,7 @@ pub async fn get_storage_config(
         return forbidden("Tenant context required");
     };
 
-    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
-    match service.get_storage_config(tenant_id).await {
+    match get_storage_config_use_case(db.get_ref(), tenant_id).await {
         Ok(Some(config)) => HttpResponse::Ok().json(build_storage_config_response(&config)),
         Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
             "success": false,
@@ -376,19 +329,20 @@ pub async fn create_storage_config(
         return forbidden("Tenant context required");
     };
 
-    let service = TenantService::new(SeaOrmTenantRepository::new(db.get_ref().clone()));
-    match service
-        .create_storage_config(
+    match create_storage_config_use_case(
+        db.get_ref(),
+        CreateStorageConfigInput {
             tenant_id,
-            body.endpoint.clone(),
-            body.region.clone(),
-            body.access_key_id.clone(),
-            body.secret_access_key.clone(),
-            body.bucket.clone(),
-            body.public_base_url.clone(),
-            body.is_active.unwrap_or(true),
-        )
-        .await
+            endpoint: body.endpoint.clone(),
+            region: body.region.clone(),
+            access_key_id: body.access_key_id.clone(),
+            secret_access_key: body.secret_access_key.clone(),
+            bucket: body.bucket.clone(),
+            public_base_url: body.public_base_url.clone(),
+            is_active: body.is_active.unwrap_or(true),
+        },
+    )
+    .await
     {
         Ok(config) => HttpResponse::Ok().json(build_storage_config_response(&config)),
         Err(error) => {
@@ -422,52 +376,26 @@ pub async fn update_storage_config(
         return forbidden("Tenant context required");
     };
 
-    let config = match tenant_storage_config::Entity::find()
-        .filter(tenant_storage_config::Column::TenantId.eq(tenant_id))
-        .one(db.get_ref())
-        .await
+    match update_storage_config_use_case(
+        db.get_ref(),
+        PatchStorageConfigInput {
+            tenant_id,
+            endpoint: body.endpoint.clone(),
+            region: body.region.clone(),
+            access_key_id: body.access_key_id.clone(),
+            secret_access_key: body.secret_access_key.clone(),
+            bucket: body.bucket.clone(),
+            public_base_url: body.public_base_url.clone(),
+            is_active: body.is_active,
+        },
+    )
+    .await
     {
-        Ok(Some(config)) => config,
-        Ok(None) => {
-            return HttpResponse::NotFound().json(serde_json::json!({
-                "success": false,
-                "error": "Storage configuration not found"
-            }));
-        }
-        Err(error) => {
-            tracing::error!(%error, "Failed to load storage config");
-            return server_error("Failed to load storage configuration");
-        }
-    };
-
-    let mut active: tenant_storage_config::ActiveModel = config.into();
-    if let Some(value) = &body.endpoint {
-        active.endpoint = Set(value.clone());
-    }
-    if let Some(value) = &body.region {
-        active.region = Set(value.clone());
-    }
-    if let Some(value) = &body.access_key_id {
-        active.access_key_id = Set(value.clone());
-    }
-    if let Some(value) = &body.secret_access_key {
-        active.secret_access_key = Set(value.clone());
-    }
-    if let Some(value) = &body.bucket {
-        active.bucket = Set(value.clone());
-    }
-    if let Some(value) = &body.public_base_url {
-        active.public_base_url = Set(Some(value.clone()));
-    }
-    if let Some(value) = body.is_active {
-        active.is_active = Set(value);
-    }
-
-    match active.update(db.get_ref()).await {
-        Ok(config) => {
-            let config = storage_entity_from_model(config);
-            HttpResponse::Ok().json(build_storage_config_response(&config))
-        }
+        Ok(Some(config)) => HttpResponse::Ok().json(build_storage_config_response(&config)),
+        Ok(None) => HttpResponse::NotFound().json(serde_json::json!({
+            "success": false,
+            "error": "Storage configuration not found"
+        })),
         Err(error) => {
             tracing::error!(%error, "Failed to update storage config");
             server_error("Failed to update storage configuration")
@@ -484,14 +412,6 @@ pub fn mask_token(token: &str) -> String {
         let suffix = chars.iter().skip(chars.len() - 4).collect::<String>();
         format!("{prefix}...{suffix}")
     }
-}
-
-fn account_entity_from_model(model: tenant_whatsapp_account::Model) -> WhatsAppSettings {
-    WhatsAppSettings::from_model(model)
-}
-
-fn storage_entity_from_model(model: tenant_storage_config::Model) -> StorageSettings {
-    StorageSettings::from_model(model)
 }
 
 fn build_account_response(
