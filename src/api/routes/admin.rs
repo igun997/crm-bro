@@ -9,8 +9,10 @@ use utoipa::ToSchema;
 use crate::api::middleware::CurrentUser;
 use crate::domain::auth::permissions::{self as permission_codes, default_tenant_roles};
 use crate::domain::tenants::{SeaOrmTenantRepository, TenantService};
+use crate::infrastructure::persistence::models::{
+    permission, role, role_permission, tenant, user, user_role,
+};
 use crate::infrastructure::security::hash_password;
-use crate::models::{permission, role, role_permission, tenant, user, user_role};
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[schema(example = json!({"name": "Acme Corp", "slug": "acme"}))]

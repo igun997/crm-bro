@@ -3,7 +3,7 @@ use sea_orm::Set;
 use serde_json::Value;
 
 use crate::domain::messaging::errors::{MessagingError, OutboxStatus};
-use crate::models::outbox_message as outbox_model;
+use crate::infrastructure::persistence::models::outbox_message as outbox_model;
 
 /// Outbox entry for a message to be sent via WhatsApp.
 #[derive(Debug, Clone)]

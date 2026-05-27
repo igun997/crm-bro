@@ -5,7 +5,7 @@ use crate::api::dto::contacts::{
 use crate::api::middleware::CurrentUser;
 use crate::domain::contacts::repositories::SeaOrmContactRepository;
 use crate::domain::contacts::{Contact, ContactError, ContactService};
-use crate::models::{contact, contact_tag, tag, user};
+use crate::infrastructure::persistence::models::{contact, contact_tag, tag, user};
 use actix_web::{delete, get, patch, post, web, HttpResponse};
 use sea_orm::{
     ActiveModelTrait, ActiveValue::Set, ColumnTrait, Condition, DatabaseConnection, EntityTrait,
@@ -597,9 +597,9 @@ mod tests {
 
     use crate::domain::contacts::Contact;
     use crate::infrastructure::config::AppConfig;
+    use crate::infrastructure::persistence::models::{contact, tenant, user};
     use crate::infrastructure::security::hash_password;
     use crate::infrastructure::security::{build_claims, encode_jwt};
-    use crate::models::{contact, tenant, user};
 
     #[test]
     fn domain_contact_response_preserves_shape_with_tags() {

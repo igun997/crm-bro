@@ -2,9 +2,11 @@ use actix_web::{get, post, web, HttpResponse};
 use sea_orm::{ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, Set};
 
 use crate::domain::messaging::MessageStatus;
+use crate::infrastructure::persistence::models::{
+    contact, conversation, message, tenant_whatsapp_account,
+};
 use crate::infrastructure::storage::StorageService;
 use crate::infrastructure::websocket::{ChatHub, ChatMessage as WsChatMessage};
-use crate::models::{contact, conversation, message, tenant_whatsapp_account};
 
 use crate::infrastructure::whatsapp::media;
 use crate::infrastructure::whatsapp::types::*;
@@ -40,9 +42,11 @@ pub async fn verify(
     }
 
     // Look up tenant by slug
-    let tenant = match crate::models::tenant::Entity::find()
-        .filter(crate::models::tenant::Column::Slug.eq(&path.tenant_slug))
-        .filter(crate::models::tenant::Column::IsActive.eq(true))
+    let tenant = match crate::infrastructure::persistence::models::tenant::Entity::find()
+        .filter(
+            crate::infrastructure::persistence::models::tenant::Column::Slug.eq(&path.tenant_slug),
+        )
+        .filter(crate::infrastructure::persistence::models::tenant::Column::IsActive.eq(true))
         .one(db.get_ref())
         .await
     {
@@ -86,9 +90,11 @@ pub async fn receive(
     hub: web::Data<actix::Addr<ChatHub>>,
 ) -> HttpResponse {
     // Look up tenant by slug — return 200 to Meta even if not found
-    let tenant = match crate::models::tenant::Entity::find()
-        .filter(crate::models::tenant::Column::Slug.eq(&path.tenant_slug))
-        .filter(crate::models::tenant::Column::IsActive.eq(true))
+    let tenant = match crate::infrastructure::persistence::models::tenant::Entity::find()
+        .filter(
+            crate::infrastructure::persistence::models::tenant::Column::Slug.eq(&path.tenant_slug),
+        )
+        .filter(crate::infrastructure::persistence::models::tenant::Column::IsActive.eq(true))
         .one(db.get_ref())
         .await
     {

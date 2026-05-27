@@ -65,7 +65,9 @@ impl WhatsAppSettings {
         })
     }
 
-    pub(crate) fn from_model(model: crate::models::tenant_whatsapp_account::Model) -> Self {
+    pub(crate) fn from_model(
+        model: crate::infrastructure::persistence::models::tenant_whatsapp_account::Model,
+    ) -> Self {
         Self {
             id: model.id,
             tenant_id: model.tenant_id,

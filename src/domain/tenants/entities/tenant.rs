@@ -41,7 +41,9 @@ impl Tenant {
         })
     }
 
-    pub(crate) fn from_model(model: crate::models::tenant::Model) -> Self {
+    pub(crate) fn from_model(
+        model: crate::infrastructure::persistence::models::tenant::Model,
+    ) -> Self {
         Self {
             id: model.id,
             name: model.name,

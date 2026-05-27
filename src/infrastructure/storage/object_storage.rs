@@ -7,7 +7,7 @@ use object_store::path::Path as ObjectPath;
 use object_store::{Attribute, AttributeValue, Attributes, ObjectStore, PutOptions};
 
 use crate::infrastructure::config::AppConfig;
-use crate::models::tenant_storage_config;
+use crate::infrastructure::persistence::models::tenant_storage_config;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 #[derive(Clone)]

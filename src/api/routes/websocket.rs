@@ -4,9 +4,9 @@ use actix_web_actors::ws;
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 
 use crate::infrastructure::config::AppConfig;
+use crate::infrastructure::persistence::models::conversation;
 use crate::infrastructure::security::decode_jwt;
 use crate::infrastructure::websocket::{ChatHub, ChatSession};
-use crate::models::conversation;
 
 /// WebSocket endpoint for global updates (all new messages)
 #[get("/ws/updates")]

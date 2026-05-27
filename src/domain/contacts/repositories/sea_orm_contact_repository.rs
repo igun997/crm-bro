@@ -5,7 +5,7 @@ use sea_orm::{
 
 use crate::{
     domain::contacts::{Contact, ContactError, ContactRepository, Pagination},
-    models::contact,
+    infrastructure::persistence::models::contact,
 };
 
 pub struct SeaOrmContactRepository {

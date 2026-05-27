@@ -49,7 +49,9 @@ impl StorageSettings {
         })
     }
 
-    pub(crate) fn from_model(model: crate::models::tenant_storage_config::Model) -> Self {
+    pub(crate) fn from_model(
+        model: crate::infrastructure::persistence::models::tenant_storage_config::Model,
+    ) -> Self {
         Self {
             id: model.id,
             tenant_id: model.tenant_id,

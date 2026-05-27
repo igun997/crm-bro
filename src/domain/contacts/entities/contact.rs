@@ -1,7 +1,7 @@
 use chrono::{NaiveDateTime, Utc};
 use sea_orm::{ActiveValue::NotSet, Set};
 
-use crate::{domain::contacts::errors::ContactError, models::contact};
+use crate::{domain::contacts::errors::ContactError, infrastructure::persistence::models::contact};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Contact {

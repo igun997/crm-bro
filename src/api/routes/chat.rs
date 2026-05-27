@@ -12,8 +12,10 @@ use utoipa::{IntoParams, ToSchema};
 use crate::api::middleware::CurrentUser;
 use crate::application::auth::require_permission;
 use crate::domain::auth::permissions;
+use crate::infrastructure::persistence::models::{
+    contact, conversation, message, outbox_message, tenant_whatsapp_account,
+};
 use crate::infrastructure::storage::StorageService;
-use crate::models::{contact, conversation, message, outbox_message, tenant_whatsapp_account};
 
 const MAX_UPLOAD_BYTES: usize = 25 * 1024 * 1024;
 

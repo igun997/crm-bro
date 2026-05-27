@@ -4,12 +4,12 @@ use sea_orm::{
 };
 
 use crm_bro::domain::auth::permissions::{roles, PERMISSIONS, SUPERADMIN_ROLE};
+use crm_bro::infrastructure::persistence::models::permission;
+use crm_bro::infrastructure::persistence::models::role;
+use crm_bro::infrastructure::persistence::models::role_permission;
+use crm_bro::infrastructure::persistence::models::user;
+use crm_bro::infrastructure::persistence::models::user_role;
 use crm_bro::infrastructure::security::hash_password;
-use crm_bro::models::permission;
-use crm_bro::models::role;
-use crm_bro::models::role_permission;
-use crm_bro::models::user;
-use crm_bro::models::user_role;
 
 /// Seed a superadmin user into the database.
 #[derive(Parser, Debug)]

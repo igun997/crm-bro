@@ -2,7 +2,7 @@ use chrono::NaiveDateTime;
 use sea_orm::Set;
 
 use crate::domain::messaging::errors::MessagingError;
-use crate::models::conversation as conversation_model;
+use crate::infrastructure::persistence::models::conversation as conversation_model;
 
 /// A conversation between a tenant and a contact via WhatsApp.
 #[derive(Debug, Clone, PartialEq, Eq)]

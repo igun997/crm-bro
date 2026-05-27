@@ -4,9 +4,9 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
 use crate::infrastructure::config::AppConfig;
+use crate::infrastructure::persistence::models::user;
 use crate::infrastructure::security::verify_password;
 use crate::infrastructure::security::{build_claims, encode_jwt};
-use crate::models::user;
 
 #[derive(Debug, Deserialize, ToSchema)]
 #[schema(example = json!({"email": "admin@acme.com", "password": "s3cret"}))]

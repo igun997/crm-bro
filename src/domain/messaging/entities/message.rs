@@ -4,7 +4,7 @@ use sea_orm::Set;
 use crate::domain::messaging::errors::{
     MessageDirection, MessageStatus, MessageType, MessagingError,
 };
-use crate::models::message as message_model;
+use crate::infrastructure::persistence::models::message as message_model;
 
 /// A message in a conversation.
 ///

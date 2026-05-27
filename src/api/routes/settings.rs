@@ -12,7 +12,9 @@ use crate::domain::tenants::{
     SeaOrmTenantRepository, StorageSettings, TenantService, WhatsAppSettings,
 };
 use crate::infrastructure::config::AppConfig;
-use crate::models::{tenant, tenant_storage_config, tenant_whatsapp_account};
+use crate::infrastructure::persistence::models::{
+    tenant, tenant_storage_config, tenant_whatsapp_account,
+};
 
 #[derive(Debug, Serialize, ToSchema)]
 #[schema(example = json!({
@@ -562,9 +564,11 @@ mod tests {
     use super::mask_token;
     use crate::domain::auth::permissions;
     use crate::infrastructure::config::AppConfig;
+    use crate::infrastructure::persistence::models::{
+        permission, role, role_permission, tenant, user, user_role,
+    };
     use crate::infrastructure::security::hash_password;
     use crate::infrastructure::security::{build_claims, encode_jwt};
-    use crate::models::{permission, role, role_permission, tenant, user, user_role};
 
     #[test]
     fn masks_long_access_token() {

@@ -5,7 +5,7 @@ use sea_orm::{
 
 use crate::{
     domain::tenants::{StorageSettings, Tenant, TenantError, TenantRepository, WhatsAppSettings},
-    models::{tenant, tenant_storage_config, tenant_whatsapp_account},
+    infrastructure::persistence::models::{tenant, tenant_storage_config, tenant_whatsapp_account},
 };
 
 pub struct SeaOrmTenantRepository {
